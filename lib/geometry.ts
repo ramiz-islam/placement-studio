@@ -10,6 +10,23 @@ import { FONT, isRTL, type Design, type Placement, type SafeBox } from "./core";
 
 export const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 
+/**
+ * The position a given placement actually uses: its own override if it has one,
+ * otherwise the shared default. This is what keeps a drag local to the frame it
+ * happened on.
+ */
+export const layersFor = (d: Design, placementId: string): Design["layers"] =>
+  d.overrides[placementId] ?? d.layers;
+
+export const hasOverride = (d: Design, placementId: string): boolean =>
+  Boolean(d.overrides[placementId]);
+
+/** #RRGGBB + 0-100 opacity -> rgba() */
+export function rgba(hex: string, opacity: number): string {
+  const n = parseInt(hex.replace("#", ""), 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${(clamp(opacity, 0, 100) / 100).toFixed(3)})`;
+}
+
 /** Reserved bands as fractions of the canvas. */
 export const safeF = (pl: Placement) => ({
   t: pl.safe.t / pl.h,
@@ -136,10 +153,13 @@ export function layout(pl: Placement, d: Design, logoAspect = 0.3): LayoutResult
   const rtl = isRTL(d.lang);
   const lh = rtl ? Math.max(F.lh, 1.38) : F.lh;
 
+  const lay = layersFor(d, pl.id);
   const blockPx = (W * d.blockW) / 100;
   const headPx = (W * d.size) / 100;
-  const brandPx = Math.max(W * 0.022, headPx * 0.28);
-  const ctaPx = Math.max(W * 0.026, headPx * 0.4);
+  // brand and CTA sizes are their own values — changing the headline must not
+  // silently resize either of them
+  const brandPx = (W * d.brandSize) / 100;
+  const ctaPx = (W * d.ctaSize) / 100;
 
   const lines = wrapLines(d.head, F.css, F.weight, headPx, blockPx);
   const brandH = d.brand ? brandPx * 1.5 : 0;
@@ -150,8 +170,8 @@ export function layout(pl: Placement, d: Design, logoAspect = 0.3): LayoutResult
 
   return {
     head: {
-      x: d.layers.head.x,
-      y: d.layers.head.y,
+      x: lay.head.x,
+      y: lay.head.y,
       w: d.blockW / 100,
       h: (brandH + gap + headH) / H,
       lines,
@@ -162,20 +182,26 @@ export function layout(pl: Placement, d: Design, logoAspect = 0.3): LayoutResult
       rtl,
     },
     cta: {
-      x: d.layers.cta.x,
-      y: d.layers.cta.y,
+      x: lay.cta.x,
+      y: lay.cta.y,
       w: ctaW / W,
       h: (ctaPx * 2.5) / H,
       ctaPx,
       rtl,
     },
     logo: {
-      x: d.layers.logo.x,
-      y: d.layers.logo.y,
+      x: lay.logo.x,
+      y: lay.logo.y,
       w: d.logoW / 100,
       h: (d.logoW / 100) * logoAspect * (W / H),
     },
   };
+}
+
+/** The scrim rectangle behind the copy block, in placement pixels. */
+export function scrimBox(L: LayoutResult, d: Design) {
+  const padX = (L.head.headPx * d.scrimPad) / 100;
+  return { padX, padY: padX * 0.8, radius: L.head.headPx * 0.35 };
 }
 
 export interface Intrusion {

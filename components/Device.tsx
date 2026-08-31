@@ -10,7 +10,7 @@
 
 import { useRef } from "react";
 import { isRTL, type Design, type LayerKey, type Placement } from "@/lib/core";
-import { clamp, intrusion, layout, safeF } from "@/lib/geometry";
+import { clamp, intrusion, layersFor, layout, rgba, safeF, scrimBox } from "@/lib/geometry";
 import type { Collision } from "@/lib/analysis";
 import { Chrome } from "./Chrome";
 
@@ -31,7 +31,8 @@ export interface DeviceProps {
   showChrome: boolean;
   /** grid cards are not draggable */
   small?: boolean;
-  onLayerMove?: (key: LayerKey, x: number, y: number) => void;
+  /** placementId is passed back so the move is stored against this frame only */
+  onLayerMove?: (placementId: string, key: LayerKey, x: number, y: number) => void;
 }
 
 export function Device(props: DeviceProps) {
@@ -57,6 +58,7 @@ export function Device(props: DeviceProps) {
   const L = layout(pl, d, logoAspect);
   const cq = (px: number) => `${((px / pl.w) * 100).toFixed(3)}cqw`;
   const rtl = isRTL(d.lang);
+  const SB = scrimBox(L, d);
 
   function startDrag(key: LayerKey, ev: React.PointerEvent<HTMLDivElement>) {
     if (small || !onLayerMove) return;
@@ -65,7 +67,8 @@ export function Device(props: DeviceProps) {
     const device = deviceRef.current;
     if (!device) return;
     const rect = device.getBoundingClientRect();
-    const start = { px: ev.clientX, py: ev.clientY, x: d.layers[key].x, y: d.layers[key].y };
+    const lay = layersFor(d, pl.id);
+    const start = { px: ev.clientX, py: ev.clientY, x: lay[key].x, y: lay[key].y };
     el.setPointerCapture(ev.pointerId);
     el.classList.add("grabbing");
 
@@ -100,7 +103,7 @@ export function Device(props: DeviceProps) {
       el.classList.remove("grabbing");
       read.remove();
       const { x, y } = at(e);
-      onLayerMove(key, x, y);
+      onLayerMove(pl.id, key, x, y);
     };
     el.addEventListener("pointermove", move);
     el.addEventListener("pointerup", up);
@@ -140,7 +143,7 @@ export function Device(props: DeviceProps) {
 
       {d.copyOn && (d.head || d.brand) ? (
         <div
-          className={`lay lay-head${d.scrim ? " scrim" : ""}${intrusion(pl, L.head).worst > 4 ? " bad-zone" : ""}`}
+          className={`lay lay-head${intrusion(pl, L.head).worst > 4 ? " bad-zone" : ""}`}
           data-layer="head"
           dir={rtl ? "rtl" : undefined}
           style={{
@@ -152,6 +155,17 @@ export function Device(props: DeviceProps) {
           }}
           onPointerDown={e => startDrag("head", e)}
         >
+          {d.scrim ? (
+            <span
+              className="scrim-bg"
+              aria-hidden="true"
+              style={{
+                inset: `-${cq(SB.padY)} -${cq(SB.padX)}`,
+                background: rgba(d.scrimColor, d.scrimOpacity),
+                borderRadius: cq(SB.radius),
+              }}
+            />
+          ) : null}
           {d.brand ? (
             <div className="lay-brand" style={{ fontSize: cq(L.head.brandPx) }}>
               {d.brand}

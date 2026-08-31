@@ -18,10 +18,11 @@ import {
   type CreativeMeta,
   type Design,
   type Lang,
+  type LayerKey,
   type Placement,
 } from "@/lib/core";
 import { clearAnalysisCache, samplePad } from "@/lib/analysis";
-import { masterZone, safeF, snapped } from "@/lib/geometry";
+import { layersFor, masterZone, safeF, snapped } from "@/lib/geometry";
 
 export interface StudioState {
   img: HTMLImageElement | null;
@@ -52,7 +53,16 @@ export interface Studio extends StudioState {
   setLang: (l: Lang) => void;
   applyKit: (k: BrandKit, persist?: boolean) => void;
   forgetKit: () => void;
-  snap: (toMaster: boolean) => void;
+  /** move one layer on ONE placement only */
+  moveLayer: (placementId: string, key: LayerKey, x: number, y: number) => void;
+  /** snap this placement's copy into its own safe box */
+  snapThis: () => void;
+  /** set the shared default from the master zone and drop every override */
+  snapAllToMaster: () => void;
+  /** push this placement's position out to every other placement */
+  applyToAll: () => void;
+  /** drop this placement's override so it follows the default again */
+  resetThis: () => void;
   reset: () => void;
   say: (msg: string) => void;
   kitReady: boolean;
@@ -229,15 +239,72 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
-  /* ---------- snap ---------- */
-  const snap = useCallback((toMaster: boolean) => {
+  /* ---------- layer positions ----------
+     A drag is local by definition: it writes an override for the placement it
+     happened on and touches nothing else. Pushing a layout everywhere is an
+     explicit action, never a side effect. */
+  const moveLayer = useCallback((placementId: string, key: LayerKey, x: number, y: number) => {
+    setS(prev => {
+      const current = layersFor(prev.design, placementId);
+      return {
+        ...prev,
+        design: {
+          ...prev.design,
+          overrides: { ...prev.design.overrides, [placementId]: { ...current, [key]: { x, y } } },
+        },
+      };
+    });
+  }, []);
+
+  const snapThis = useCallback(() => {
     setS(prev => {
       const pl = PLACEMENTS.find(p => p.id === prev.active) || PLACEMENTS[0];
-      const zone = toMaster ? masterZone(pl, PLACEMENTS) : safeF(pl);
       const aspect = prev.logo ? prev.logo.naturalHeight / prev.logo.naturalWidth : 0.3;
-      return { ...prev, design: { ...prev.design, layers: snapped(pl, prev.design, zone, aspect) } };
+      return {
+        ...prev,
+        design: {
+          ...prev.design,
+          overrides: {
+            ...prev.design.overrides,
+            [pl.id]: snapped(pl, prev.design, safeF(pl), aspect),
+          },
+        },
+      };
     });
-    say(toMaster ? "Snapped into the master safe zone" : "Snapped into this placement's safe box");
+    say("Snapped into this placement's safe box");
+  }, [say]);
+
+  const snapAllToMaster = useCallback(() => {
+    setS(prev => {
+      const pl = PLACEMENTS.find(p => p.id === prev.active) || PLACEMENTS[0];
+      const aspect = prev.logo ? prev.logo.naturalHeight / prev.logo.naturalWidth : 0.3;
+      return {
+        ...prev,
+        design: {
+          ...prev.design,
+          layers: snapped(pl, prev.design, masterZone(pl, PLACEMENTS), aspect),
+          overrides: {},
+        },
+      };
+    });
+    say("Master layout applied to every placement");
+  }, [say]);
+
+  const applyToAll = useCallback(() => {
+    setS(prev => {
+      const lay = layersFor(prev.design, prev.active);
+      return { ...prev, design: { ...prev.design, layers: lay, overrides: {} } };
+    });
+    say("This position is now the default everywhere");
+  }, [say]);
+
+  const resetThis = useCallback(() => {
+    setS(prev => {
+      const next = { ...prev.design.overrides };
+      delete next[prev.active];
+      return { ...prev, design: { ...prev.design, overrides: next } };
+    });
+    say("Back to the shared default");
   }, [say]);
 
   const reset = useCallback(() => {
@@ -269,7 +336,11 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     setLang,
     applyKit,
     forgetKit,
-    snap,
+    moveLayer,
+    snapThis,
+    snapAllToMaster,
+    applyToAll,
+    resetThis,
     reset,
     say,
     kitReady,

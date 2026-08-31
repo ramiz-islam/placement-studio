@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import { PLACEMENTS, type LayerKey } from "@/lib/core";
-import { RATIO_LABEL } from "@/lib/geometry";
+import { RATIO_LABEL, hasOverride } from "@/lib/geometry";
 import { audit } from "@/lib/audit";
 import { useStudio } from "./StudioProvider";
 import { Device } from "./Device";
@@ -11,8 +11,9 @@ export function Stage({ onGenerate }: { onGenerate: () => void }) {
   const st = useStudio();
   const plats = useMemo(() => [...new Set(PLACEMENTS.map(p => p.plat))], []);
 
-  const onLayerMove = (key: LayerKey, x: number, y: number) =>
-    st.patchDesign({ layers: { ...st.design.layers, [key]: { x, y } } });
+  // a drag writes only the placement it happened on
+  const onLayerMove = (placementId: string, key: LayerKey, x: number, y: number) =>
+    st.moveLayer(placementId, key, x, y);
 
   if (!st.img || !st.src || !st.meta) {
     return (
@@ -111,7 +112,7 @@ function FocusView({
 }: {
   st: ReturnType<typeof useStudio>;
   common: Common;
-  onLayerMove: (k: LayerKey, x: number, y: number) => void;
+  onLayerMove: (placementId: string, k: LayerKey, x: number, y: number) => void;
 }) {
   const pl = st.placement;
   const a = audit({
@@ -125,6 +126,7 @@ function FocusView({
     ver: st.ver,
   });
   const tall = pl.h / pl.w > 1.2;
+  const custom = hasOverride(st.design, pl.id);
 
   return (
     <div className="device-wrap">
@@ -138,13 +140,31 @@ function FocusView({
         </div>
       </div>
       <div className="snap-row">
-        <button className="btn" onClick={() => st.snap(false)} type="button">
-          Snap copy into this safe box
+        <button className="btn" onClick={st.snapThis} type="button">
+          Snap into this safe box
         </button>
-        <button className="btn" onClick={() => st.snap(true)} type="button">
-          Snap to master zone
+        <button className="btn" onClick={st.applyToAll} type="button">
+          Apply this position everywhere
         </button>
+        <button className="btn" onClick={st.snapAllToMaster} type="button">
+          Snap all to master zone
+        </button>
+        {custom ? (
+          <button className="btn" onClick={st.resetThis} type="button">
+            Reset to default
+          </button>
+        ) : null}
       </div>
+      <p className="pos-note">
+        {custom ? (
+          <>
+            <b style={{ color: "var(--blue-bright)" }}>Custom position</b> for {pl.plat} {pl.name} — other placements
+            are untouched.
+          </>
+        ) : (
+          <>Using the shared default position. Dragging here makes it custom to this placement only.</>
+        )}
+      </p>
       <div className="legend">
         <span>
           <i className="sw res" />

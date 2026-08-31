@@ -84,12 +84,28 @@ export interface Design {
   ctaInk: string;
   /** headline size as a percentage of frame width */
   size: number;
+  /** brand eyebrow size as a percentage of frame width — independent of the headline */
+  brandSize: number;
+  /** CTA label size as a percentage of frame width — independent of the headline */
+  ctaSize: number;
   /** text block width as a percentage of frame width */
   blockW: number;
   /** logo width as a percentage of frame width */
   logoW: number;
   scrim: boolean;
+  scrimColor: string;
+  /** 0-100 */
+  scrimOpacity: number;
+  /** padding around the copy block, as a percentage of headline size */
+  scrimPad: number;
+  /** the default position, used by any placement without its own */
   layers: Layers;
+  /**
+   * Per-placement positions, keyed by placement id. Dragging inside one
+   * placement only ever writes here, so moving copy on TikTok cannot silently
+   * break Snapchat.
+   */
+  overrides: Record<string, Layers>;
 }
 
 export interface CreativeMeta {
@@ -107,14 +123,20 @@ export const DESIGN_DEFAULTS: Omit<
   lang: "en",
   copyOn: true,
   size: 6.2,
+  brandSize: 2.2,
+  ctaSize: 2.6,
   blockW: 80,
   logoW: 22,
   scrim: false,
+  scrimColor: "#07080E",
+  scrimOpacity: 50,
+  scrimPad: 50,
   layers: {
     head: { x: 0.08, y: 0.36 },
     cta: { x: 0.08, y: 0.56 },
     logo: { x: 0.06, y: 0.05 },
   },
+  overrides: {},
 };
 
 /* ============================================================
@@ -398,12 +420,12 @@ export const PLACEMENTS: Placement[] = [
 
 /* Headline fonts offered in the picker (all loaded from Google Fonts above) */
 export const FONTS: FontDef[] = [
-  { id:"jakarta", label:"Plus Jakarta Sans — brand", css:'"Plus Jakarta Sans", sans-serif', weight:800, lh:1.14 },
-  { id:"anton",   label:"Anton — impact",           css:'"Anton", sans-serif',            weight:400, lh:1.06 },
-  { id:"bebas",   label:"Bebas Neue — condensed",   css:'"Bebas Neue", sans-serif',       weight:400, lh:1.02 },
-  { id:"cairo",   label:"Cairo — Arabic + Latin",   css:'"Cairo", sans-serif',            weight:900, lh:1.4  },
-  { id:"kufi",    label:"Noto Kufi Arabic",         css:'"Noto Kufi Arabic", sans-serif', weight:700, lh:1.45 },
-  { id:"plexar",  label:"IBM Plex Sans Arabic",     css:'"IBM Plex Sans Arabic", sans-serif', weight:700, lh:1.4 }
+  { id:"jakarta", label:"Plus Jakarta Sans — brand", css:"'Plus Jakarta Sans', sans-serif", weight:800, lh:1.14 },
+  { id:"anton",   label:"Anton — impact",           css:"'Anton', sans-serif",            weight:400, lh:1.06 },
+  { id:"bebas",   label:"Bebas Neue — condensed",   css:"'Bebas Neue', sans-serif",       weight:400, lh:1.02 },
+  { id:"cairo",   label:"Cairo — Arabic + Latin",   css:"'Cairo', sans-serif",            weight:900, lh:1.4  },
+  { id:"kufi",    label:"Noto Kufi Arabic",         css:"'Noto Kufi Arabic', sans-serif", weight:700, lh:1.45 },
+  { id:"plexar",  label:"IBM Plex Sans Arabic",     css:"'IBM Plex Sans Arabic', sans-serif", weight:700, lh:1.4 }
 ];
 export const FONT = (id: string): FontDef => FONTS.find(f => f.id === id) || FONTS[0];
 

@@ -4,7 +4,7 @@
  */
 
 import { FONT, isRTL, type Design, type Fit, type Placement } from "./core";
-import { coverRect, layout, measure, safeF, wrapLines } from "./geometry";
+import { coverRect, layout, measure, rgba, safeF, scrimBox, wrapLines } from "./geometry";
 
 export interface RenderOpts {
   scale: number;
@@ -69,10 +69,11 @@ export function renderPlacement(pl: Placement, o: RenderOpts): HTMLCanvasElement
       const brandPx = L.head.brandPx * o.scale;
 
       if (d.scrim) {
-        const padX = headPx * 0.5;
-        const padY = headPx * 0.4;
-        g.fillStyle = "rgba(7,8,14,.5)";
-        roundRect(g, hx - padX, hy - padY, hw + padX * 2, L.head.h * H + padY * 2, headPx * 0.35);
+        const sb = scrimBox(L, d);
+        const padX = sb.padX * o.scale;
+        const padY = sb.padY * o.scale;
+        g.fillStyle = rgba(d.scrimColor, d.scrimOpacity);
+        roundRect(g, hx - padX, hy - padY, hw + padX * 2, L.head.h * H + padY * 2, sb.radius * o.scale);
         g.fill();
       }
 

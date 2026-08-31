@@ -174,6 +174,26 @@ export function LeftRail({ onGenerate }: { onGenerate: () => void }) {
                 onChange={e => st.patchDesign({ size: parseFloat(e.target.value) })}
               />
             </Field>
+            <Field label="Brand line size" hint={`${d.brandSize.toFixed(1)}% width`}>
+              <input
+                type="range"
+                min={1}
+                max={8}
+                step={0.1}
+                value={d.brandSize}
+                onChange={e => st.patchDesign({ brandSize: parseFloat(e.target.value) })}
+              />
+            </Field>
+            <Field label="CTA size" hint={`${d.ctaSize.toFixed(1)}% width`}>
+              <input
+                type="range"
+                min={1.5}
+                max={9}
+                step={0.1}
+                value={d.ctaSize}
+                onChange={e => st.patchDesign({ ctaSize: parseFloat(e.target.value) })}
+              />
+            </Field>
             <Field label="Text block width" hint={`${d.blockW}% width`}>
               <input
                 type="range"
@@ -194,6 +214,36 @@ export function LeftRail({ onGenerate }: { onGenerate: () => void }) {
                 Scrim behind copy
               </MiniBtn>
             </div>
+
+            {d.scrim ? (
+              <div className="subpanel">
+                <ColorField
+                  label="Scrim colour"
+                  value={d.scrimColor}
+                  onChange={hex => st.patchDesign({ scrimColor: hex })}
+                />
+                <Field label="Scrim opacity" hint={`${d.scrimOpacity}%`}>
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    step={1}
+                    value={d.scrimOpacity}
+                    onChange={e => st.patchDesign({ scrimOpacity: Number(e.target.value) })}
+                  />
+                </Field>
+                <Field label="Scrim padding" hint={`${d.scrimPad}% of headline`}>
+                  <input
+                    type="range"
+                    min={0}
+                    max={150}
+                    step={5}
+                    value={d.scrimPad}
+                    onChange={e => st.patchDesign({ scrimPad: Number(e.target.value) })}
+                  />
+                </Field>
+              </div>
+            ) : null}
           </>
         ) : null}
       </div>
