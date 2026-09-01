@@ -4,6 +4,7 @@ import { PLACEMENTS } from "@/lib/core";
 import { RATIO_LABEL, fitFor, masterZone } from "@/lib/geometry";
 import { audit, grade, type Level } from "@/lib/audit";
 import { useStudio } from "./StudioProvider";
+import { Collapsible } from "./ui";
 
 const pc = (n: number) => `${(n * 100).toFixed(1)}%`;
 const icoFor = (l: Level) => (l === "ok" ? "i-check" : l === "warn" ? "i-warn" : "i-x");
@@ -80,6 +81,10 @@ export function AuditPanel() {
           </div>
 
           <div className="panel">
+            <Collapsible
+              title="Master safe zone"
+              hint={`${z.safeW} × ${z.safeH}`}
+            >
             <div className="p-head">
               <span className="p-title">Master safe zone</span>
               <span className="p-note">
@@ -121,33 +126,32 @@ export function AuditPanel() {
                 . {z.deepest.plat} {z.deepest.name} sets the floor with {z.deepest.safe.b}px of bottom furniture.
               </p>
             </div>
+            </Collapsible>
           </div>
 
           <div className="panel">
-            <div className="p-head">
-              <span className="p-title">Spec sheet</span>
-            </div>
-            <table className="spec-table">
-              <tbody>
-                {Object.entries(pl.spec).map(([k, v]) => (
-                  <tr key={k}>
-                    <th>{k}</th>
-                    <td>{v}</td>
-                  </tr>
+            <Collapsible title="Spec sheet" hint={`${pl.w} × ${pl.h}`}>
+              <table className="spec-table">
+                <tbody>
+                  {Object.entries(pl.spec).map(([k, v]) => (
+                    <tr key={k}>
+                      <th>{k}</th>
+                      <td>{v}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </Collapsible>
+          </div>
+
+          <div className="panel">
+            <Collapsible title="Best practice" hint={`${pl.bp.length} notes`}>
+              <ul className="bp">
+                {pl.bp.map(t => (
+                  <li key={t}>{t}</li>
                 ))}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="panel">
-            <div className="p-head">
-              <span className="p-title">Best practice</span>
-            </div>
-            <ul className="bp">
-              {pl.bp.map(t => (
-                <li key={t}>{t}</li>
-              ))}
-            </ul>
+              </ul>
+            </Collapsible>
           </div>
         </>
       ) : null}
