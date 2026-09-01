@@ -7,7 +7,7 @@
  */
 
 import { FONT, isRTL, type Design, type Fit, type Lang, type Placement, type Pt, type SafeBox } from "./core";
-import { ICON, type Layer, type TextLayer } from "./layers";
+import { ICON, type Align, type Layer, type TextLayer } from "./layers";
 
 export const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 
@@ -249,6 +249,7 @@ export interface Box {
 
 export interface TextMetrics {
   kind: "text";
+  align: Align;
   lines: Token[][];
   spaceW: number;
   sizePx: number;
@@ -312,7 +313,17 @@ export function place(pl: Placement, d: Design, layer: Layer, c: LayoutContext, 
       return {
         layer,
         box: { x: pos.x, y: pos.y, w: layer.blockW / 100, h: (lines.length * sizePx * lh) / H },
-        metrics: { kind: "text", lines, spaceW, sizePx, lh, fontCss: F.css, weight: F.weight, rtl },
+        metrics: {
+          kind: "text",
+          align: layer.align ?? (rtl ? "right" : "left"),
+          lines,
+          spaceW,
+          sizePx,
+          lh,
+          fontCss: F.css,
+          weight: F.weight,
+          rtl,
+        },
       };
     }
     case "cta": {
@@ -339,17 +350,36 @@ export function place(pl: Placement, d: Design, layer: Layer, c: LayoutContext, 
       const w = band ? 1 : layer.w / 100;
       const x = band ? 0 : pos.x;
       const h = layer.shape === "line" ? Math.max(layer.h / 100, 0.002) : layer.h / 100;
-      return { layer, box: { x, y: pos.y, w, h }, metrics: { kind: "shape" } };
+      // a rotated shape occupies its rotated bounding box, which is what the
+      // safe-zone check has to measure
+      return { layer, box: rotatedBox({ x, y: pos.y, w, h }, layer.rotation ?? 0, W, H), metrics: { kind: "shape" } };
     }
     case "icon": {
       const w = layer.w / 100;
       return {
         layer,
-        box: { x: pos.x, y: pos.y, w, h: w * (W / H) },
+        box: rotatedBox({ x: pos.x, y: pos.y, w, h: w * (W / H) }, layer.rotation ?? 0, W, H),
         metrics: { kind: "icon", path: ICON(layer.icon).d },
       };
     }
   }
+}
+
+/**
+ * The axis-aligned box a rotated rectangle actually covers, keeping the same
+ * centre. Used so the safe-zone audit measures what is really on screen.
+ */
+export function rotatedBox(box: Box, deg: number, W: number, H: number): Box {
+  if (!deg) return box;
+  const rad = (deg * Math.PI) / 180;
+  const c = Math.abs(Math.cos(rad));
+  const s = Math.abs(Math.sin(rad));
+  // work in pixels so width and height are comparable, then convert back
+  const wpx = box.w * W;
+  const hpx = box.h * H;
+  const nw = (wpx * c + hpx * s) / W;
+  const nh = (wpx * s + hpx * c) / H;
+  return { x: box.x + (box.w - nw) / 2, y: box.y + (box.h - nh) / 2, w: nw, h: nh };
 }
 
 /** Every visible layer, in paint order. */
@@ -416,6 +446,57 @@ export function masterZone(pl: Placement, all: Placement[]): MasterZone {
     safeW: Math.round(pl.w * (1 - l - r)),
     safeH: Math.round(pl.h * (1 - t - b)),
   };
+}
+
+/* ---------- alignment ---------- */
+
+export type AlignEdge = "left" | "hcenter" | "right" | "top" | "vcenter" | "bottom";
+
+/**
+ * Align a set of placed layers.
+ *
+ * With one layer selected the reference is the frame, which is what "centre this
+ * headline" means. With two or more it is the selection's own bounding box, so
+ * centring a caption on a band moves the caption and leaves the band — the band
+ * already spans the box.
+ */
+export function alignedPositions(placed: Placed[], edge: AlignEdge, d: Design, placementId: string): Record<string, Pt> {
+  if (!placed.length) return {};
+  const single = placed.length === 1;
+  const minX = single ? 0 : Math.min(...placed.map(p => p.box.x));
+  const maxX = single ? 1 : Math.max(...placed.map(p => p.box.x + p.box.w));
+  const minY = single ? 0 : Math.min(...placed.map(p => p.box.y));
+  const maxY = single ? 1 : Math.max(...placed.map(p => p.box.y + p.box.h));
+
+  const out: Record<string, Pt> = {};
+  for (const p of placed) {
+    const cur = posFor(d, placementId, p.layer);
+    // a band spans the frame; only its vertical position is meaningful
+    const isBand = p.layer.kind === "shape" && p.layer.shape === "band";
+    let { x, y } = cur;
+    switch (edge) {
+      case "left":
+        if (!isBand) x = minX;
+        break;
+      case "hcenter":
+        if (!isBand) x = minX + (maxX - minX - p.box.w) / 2;
+        break;
+      case "right":
+        if (!isBand) x = maxX - p.box.w;
+        break;
+      case "top":
+        y = minY;
+        break;
+      case "vcenter":
+        y = minY + (maxY - minY - p.box.h) / 2;
+        break;
+      case "bottom":
+        y = maxY - p.box.h;
+        break;
+    }
+    out[p.layer.id] = { x, y };
+  }
+  return out;
 }
 
 /**

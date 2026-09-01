@@ -38,6 +38,10 @@ Then open http://localhost:3210.
 - **Reserved bands drawn over the creative**, measured in real pixels against each placement's own canvas.
 - **Collision detection.** The creative is composed into each placement exactly as the feed would crop it, then scored cell by cell for local edge energy. Cells that are unusually detailed *relative to the rest of the frame* get flagged where they land in a reserved band. This measures detail density, not glyphs — the UI says so everywhere.
 - **Draggable, resizable layers** — positions are per placement, so a drag on TikTok never moves Snapchat. Edge and corner handles resize the selected layer; a layer may bleed off the frame and gets clipped exactly as the real ad would be, while always keeping a sliver on-frame so nothing can be lost. Live pixel readout, per-layer intrusion checks, and explicit ways to push a layout everywhere.
+- **Multi-select and align** - ctrl-click layers on the frame or in the list, then align left / centre / right / top / middle / bottom. One selected aligns to the frame; several align to each other. Dragging one of a multi-selection moves them all.
+- **Merge text layers** into one, keeping the styling of the layer the inspector is pointed at.
+- **Text alignment** per layer, including over a shape or band. **Rotation** on shapes and icons, with 0/45/90/180 presets.
+- **Overlapping layers**: alt-click reaches whatever is underneath, arrow keys nudge the selection (Shift for a bigger step), and clicking the artwork deselects everything.
 - **Paint order that behaves** — a new shape or band drops in *behind* the copy rather than on top of it, with Bring to front / Send behind everything, per-layer arrows, and `[` / `]` (add Shift to jump to the ends).
 - **Crop or letterbox per channel**, with a shared default — a 2:3 source can be cropped on Reels and letterboxed on a 1.91:1 banner in the same session.
 - **Undo and redo**, 30 steps, Ctrl+Z / Ctrl+Shift+Z. A slider drag collapses into a single step rather than one per pixel.

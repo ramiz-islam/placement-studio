@@ -55,8 +55,9 @@ export function Stage({ onGenerate }: { onGenerate: () => void }) {
     showFlags: st.flags,
     showChrome: st.chrome,
     framed: st.deviceFrame,
-    selectedId: st.selectedId,
+    selectedIds: st.selectedIds,
     onSelect: st.select,
+    onDeselect: () => st.select(null),
   };
 
   return (
@@ -138,8 +139,39 @@ function FocusView({
         col={a.col}
         width={tall ? "min(300px, 40vh)" : "min(440px, 90%)"}
         onLayerMove={onLayerMove}
+        onSelectionMove={st.moveSelected}
         onLayerResize={st.resizeLayer}
       />
+
+      <div className="align-bar">
+        <b>Align</b>
+        <button className="mini-btn" title="Align left" onClick={() => st.align("left")} type="button">
+          ⇤
+        </button>
+        <button className="mini-btn" title="Centre horizontally" onClick={() => st.align("hcenter")} type="button">
+          ↔
+        </button>
+        <button className="mini-btn" title="Align right" onClick={() => st.align("right")} type="button">
+          ⇥
+        </button>
+        <span className="align-sep" />
+        <button className="mini-btn" title="Align top" onClick={() => st.align("top")} type="button">
+          ⤒
+        </button>
+        <button className="mini-btn" title="Centre vertically" onClick={() => st.align("vcenter")} type="button">
+          ↕
+        </button>
+        <button className="mini-btn" title="Align bottom" onClick={() => st.align("bottom")} type="button">
+          ⤓
+        </button>
+        <span className="align-note">
+          {st.selectedIds.length === 0
+            ? "nothing selected — aligns every layer to the frame"
+            : st.selectedIds.length === 1
+              ? "aligns the selected layer to the frame"
+              : `aligns ${st.selectedIds.length} selected layers to each other`}
+        </span>
+      </div>
       <div className="device-cap">
         <div className="dc-name">
           {pl.plat} · {pl.name}
@@ -228,7 +260,10 @@ function FocusView({
           <i className="sw hit" />
           Busy artwork in a reserved band
         </span>
-        <span>Drag any layer on the frame · drag its edge handles to resize · layers may bleed off the edge</span>
+        <span>
+          Drag to move · edge handles to resize · <b>alt-click</b> to reach a layer underneath · <b>ctrl-click</b> to
+          select several · arrow keys to nudge · click the artwork to deselect
+        </span>
       </div>
     </div>
   );

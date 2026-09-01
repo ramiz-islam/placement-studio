@@ -54,8 +54,12 @@ interface Base {
   pos: Pt;
 }
 
+export type Align = "left" | "center" | "right";
+
 export interface TextLayer extends Base {
   kind: "text";
+  /** where each line sits inside the text block */
+  align: Align;
   /** words in [square brackets] take `color2` */
   text: string;
   font: string;
@@ -105,6 +109,8 @@ export interface ShapeLayer extends Base {
   fill: Fill;
   /** % of the shorter side */
   radius: number;
+  /** degrees clockwise, about the shape's own centre */
+  rotation: number;
   /**
    * An uploaded image, clipped to the shape. With this set the shape becomes a
    * picture frame — a logo lockup, a badge, a cut-out — instead of flat colour.
@@ -120,6 +126,8 @@ export interface IconLayer extends Base {
   /** % of frame width */
   w: number;
   color: string;
+  /** degrees clockwise, about the icon's own centre */
+  rotation: number;
   /** the same plate the text and logo layers get */
   scrim: Plate;
 }
@@ -178,6 +186,7 @@ export function textLayer(d: NewLayerDefaults, over: Partial<TextLayer> = {}): T
     lineHeight: null,
     tracking: 0,
     upper: false,
+    align: "left",
     scrim: noPlate(),
     ...over,
   };
@@ -226,6 +235,7 @@ export function shapeLayer(over: Partial<ShapeLayer> = {}): ShapeLayer {
     h: 12,
     fill: solid("#FF5450", 100),
     radius: 8,
+    rotation: 0,
     src: null,
     ...over,
   };
@@ -242,6 +252,7 @@ export function iconLayer(over: Partial<IconLayer> = {}): IconLayer {
     src: null,
     w: 8,
     color: "#BFFF00",
+    rotation: 0,
     scrim: { ...noPlate("#FFFFFF", 100), pad: 30, radius: 50 },
     ...over,
   };

@@ -38,7 +38,18 @@ import {
   type NewLayerDefaults,
 } from "@/lib/layers";
 import { clearAnalysisCache, samplePad } from "@/lib/analysis";
-import { fitFor, masterZone, safeF, stackInside, type LayoutContext } from "@/lib/geometry";
+import {
+  alignedPositions,
+  clampPos,
+  fitFor,
+  masterZone,
+  place,
+  posFor,
+  safeF,
+  stackInside,
+  type AlignEdge,
+  type LayoutContext,
+} from "@/lib/geometry";
 
 const HISTORY_LIMIT = 30;
 /** edits with the same tag inside this window collapse into one undo step */
@@ -68,7 +79,8 @@ export interface StudioState {
   chrome: boolean;
   /** rounded phone shell, off by default — the grid should show the real frame */
   deviceFrame: boolean;
-  selectedId: string | null;
+  /** last entry is the "primary" one the inspector edits */
+  selectedIds: string[];
   past: HistEntry[];
   future: Design[];
   toast: string | null;
@@ -100,10 +112,19 @@ export interface Studio extends StudioState {
   reorderLayer: (id: string, dir: -1 | 1) => void;
   toFront: (id: string) => void;
   toBack: (id: string) => void;
+  /** the layer the inspector edits: the most recently selected */
+  selectedId: string | null;
+  align: (edge: AlignEdge) => void;
+  /** move the selection by whole placement pixels */
+  nudge: (dx: number, dy: number) => void;
+  mergeSelected: () => void;
+  canMerge: boolean;
   /** live resize from an edge handle — coalesced into one undo step */
   resizeLayer: (id: string, patch: Partial<Layer>) => void;
-  select: (id: string | null) => void;
+  select: (id: string | null, additive?: boolean) => void;
   moveLayer: (placementId: string, layerId: string, x: number, y: number) => void;
+  /** apply one delta to every selected layer except the one already moved */
+  moveSelected: (placementId: string, dx: number, dy: number, exceptId?: string) => void;
   snapThis: () => void;
   snapAllToMaster: () => void;
   applyToAll: () => void;
@@ -151,7 +172,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     flags: true,
     chrome: true,
     deviceFrame: false,
-    selectedId: null,
+    selectedIds: [],
     past: [],
     future: [],
     toast: null,
@@ -408,7 +429,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
 
         return {
           ...prev,
-          selectedId: made.id,
+          selectedIds: [made.id],
           design: { ...prev.design, layers },
           past: [...prev.past, { design: prev.design, tag: `add:${madeId}`, at: Date.now() }].slice(-HISTORY_LIMIT),
           future: [],
@@ -441,7 +462,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
           }
           return { ...d, layers: d.layers.filter(l => l.id !== id), overrides };
         },
-        { selectedId: null }
+        { selectedIds: [] }
       ),
     [commit]
   );
@@ -464,7 +485,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
         layers.splice(i + 1, 0, copy);
         return { ...d, layers };
       });
-      setS(prev => (newId ? { ...prev, selectedId: newId } : prev));
+      setS(prev => (newId ? { ...prev, selectedIds: [newId] } : prev));
     },
     [commit]
   );
@@ -512,7 +533,122 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     [commit]
   );
 
-  const select = useCallback((id: string | null) => setS(prev => ({ ...prev, selectedId: id })), []);
+  const select = useCallback((id: string | null, additive = false) => {
+    setS(prev => {
+      if (id === null) return { ...prev, selectedIds: [] };
+      if (!additive) return { ...prev, selectedIds: [id] };
+      const has = prev.selectedIds.includes(id);
+      // additive: toggle it, keeping the newest last so the inspector follows
+      return {
+        ...prev,
+        selectedIds: has ? prev.selectedIds.filter(x => x !== id) : [...prev.selectedIds, id],
+      };
+    });
+  }, []);
+
+  /* ---------- alignment ---------- */
+  const align = useCallback(
+    (edge: AlignEdge) => {
+      setS(prev => {
+        const pl = PLACEMENTS.find(p => p.id === prev.active) ?? PLACEMENTS[0];
+        const ctx: LayoutContext = {
+          lang: prev.design.lang,
+          logoAspect: prev.logo ? prev.logo.naturalHeight / prev.logo.naturalWidth : 0.3,
+        };
+        const ids = prev.selectedIds.length
+          ? prev.selectedIds
+          : prev.design.layers.filter(l => l.on).map(l => l.id);
+        const placed = prev.design.layers
+          .filter(l => l.on && ids.includes(l.id))
+          .map(l => place(pl, prev.design, l, ctx));
+        if (!placed.length) return prev;
+        const next = alignedPositions(placed, edge, prev.design, pl.id);
+        return {
+          ...prev,
+          design: {
+            ...prev.design,
+            overrides: {
+              ...prev.design.overrides,
+              [pl.id]: { ...(prev.design.overrides[pl.id] ?? {}), ...next },
+            },
+          },
+          past: [...prev.past, { design: prev.design, tag: `align:${edge}`, at: Date.now() }].slice(-HISTORY_LIMIT),
+          future: [],
+        };
+      });
+    },
+    []
+  );
+
+  /** Arrow-key nudge: the reliable way to move a layer buried under another. */
+  const nudge = useCallback((dx: number, dy: number) => {
+    setS(prev => {
+      if (!prev.selectedIds.length) return prev;
+      const pl = PLACEMENTS.find(p => p.id === prev.active) ?? PLACEMENTS[0];
+      const ctx: LayoutContext = {
+        lang: prev.design.lang,
+        logoAspect: prev.logo ? prev.logo.naturalHeight / prev.logo.naturalWidth : 0.3,
+      };
+      const per = { ...(prev.design.overrides[pl.id] ?? {}) };
+      for (const id of prev.selectedIds) {
+        const layer = prev.design.layers.find(l => l.id === id);
+        if (!layer) continue;
+        const p = place(pl, prev.design, layer, ctx);
+        const cur = posFor(prev.design, pl.id, layer);
+        per[id] = clampPos(p.box, cur.x + dx / pl.w, cur.y + dy / pl.h);
+      }
+      const last = prev.past[prev.past.length - 1];
+      const coalesce = Boolean(last && last.tag === "nudge" && Date.now() - last.at < COALESCE_MS);
+      return {
+        ...prev,
+        design: { ...prev.design, overrides: { ...prev.design.overrides, [pl.id]: per } },
+        past: coalesce
+          ? prev.past.slice(0, -1).concat({ ...last!, at: Date.now() })
+          : [...prev.past, { design: prev.design, tag: "nudge", at: Date.now() }].slice(-HISTORY_LIMIT),
+        future: [],
+      };
+    });
+  }, []);
+
+  /**
+   * Merge the selected text layers into one, joining their lines. Only text
+   * merges: flattening a shape and a caption into a single object would throw
+   * away the ability to restyle either, which is the whole point of layers.
+   */
+  const mergeSelected = useCallback(() => {
+    setS(prev => {
+      const chosen = prev.design.layers.filter(l => prev.selectedIds.includes(l.id) && l.kind === "text");
+      if (chosen.length < 2) return prev;
+      // keep the layer the inspector is pointed at — its styling is the one the
+      // user was just looking at, so the result is what they expect
+      const primaryId = prev.selectedIds[prev.selectedIds.length - 1];
+      const keep = chosen.find(l => l.id === primaryId) ?? chosen[0];
+      const merged = {
+        ...keep,
+        text: chosen.map(l => (l.kind === "text" ? l.text : "")).filter(Boolean).join(" "),
+        name: keep.name,
+      } as Layer;
+      const drop = new Set(chosen.slice(1).map(l => l.id));
+      const overrides: Design["overrides"] = {};
+      for (const [plId, per] of Object.entries(prev.design.overrides)) {
+        const copy = { ...per };
+        for (const id of drop) delete copy[id];
+        if (Object.keys(copy).length) overrides[plId] = copy;
+      }
+      return {
+        ...prev,
+        selectedIds: [keep.id],
+        design: {
+          ...prev.design,
+          layers: prev.design.layers.filter(l => !drop.has(l.id)).map(l => (l.id === keep.id ? merged : l)),
+          overrides,
+        },
+        past: [...prev.past, { design: prev.design, tag: "merge", at: Date.now() }].slice(-HISTORY_LIMIT),
+        future: [],
+      };
+    });
+    say("Text layers merged");
+  }, [say]);
 
   const moveLayer = useCallback(
     (placementId: string, layerId: string, x: number, y: number) =>
@@ -522,6 +658,31 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
       })),
     [commit]
   );
+
+  /**
+   * Move every selected layer by the same delta. A multi-selection behaves like
+   * a group when dragged, which is what selecting several of them implies.
+   */
+  const moveSelected = useCallback((placementId: string, dx: number, dy: number, exceptId?: string) => {
+    setS(prev => {
+      const ids = prev.selectedIds.filter(id => id !== exceptId);
+      if (!ids.length) return prev;
+      const pl = PLACEMENTS.find(p => p.id === placementId) ?? PLACEMENTS[0];
+      const ctx: LayoutContext = {
+        lang: prev.design.lang,
+        logoAspect: prev.logo ? prev.logo.naturalHeight / prev.logo.naturalWidth : 0.3,
+      };
+      const per = { ...(prev.design.overrides[placementId] ?? {}) };
+      for (const id of ids) {
+        const layer = prev.design.layers.find(l => l.id === id);
+        if (!layer) continue;
+        const p = place(pl, prev.design, layer, ctx);
+        const cur = posFor(prev.design, placementId, layer);
+        per[id] = clampPos(p.box, cur.x + dx, cur.y + dy);
+      }
+      return { ...prev, design: { ...prev.design, overrides: { ...prev.design.overrides, [placementId]: per } } };
+    });
+  }, []);
 
   const ctxOf = (st: StudioState): LayoutContext => ({
     lang: st.design.lang,
@@ -602,7 +763,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
       view: "focus",
       active: PLACEMENTS[0].id,
       plat: PLACEMENTS[0].plat,
-      selectedId: null,
+      selectedIds: [],
       design: initialDesign(prev.kit),
       past: [],
       future: [],
@@ -643,7 +804,13 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     toBack,
     resizeLayer,
     select,
+    selectedId: s.selectedIds.length ? s.selectedIds[s.selectedIds.length - 1] : null,
+    align,
+    nudge,
+    mergeSelected,
+    canMerge: s.design.layers.filter(l => s.selectedIds.includes(l.id) && l.kind === "text").length >= 2,
     moveLayer,
+    moveSelected,
     snapThis,
     snapAllToMaster,
     applyToAll,

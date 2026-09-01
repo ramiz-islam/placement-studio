@@ -539,3 +539,19 @@ textarea[dir=rtl]{text-align:right}
 /* text layers have no intrinsic box, so anchor the bottom handle to the content */
 .lay-text{position:absolute}
 .lay-cta .rh-e,.lay-cta .rh-se{right:-1.7cqw}
+
+/* ============================================================
+   ALIGN BAR
+   ============================================================ */
+.align-bar{
+  display:flex;align-items:center;gap:5px;flex-wrap:wrap;justify-content:center;
+  padding:7px 11px;border:1px solid var(--line);border-radius:var(--r-m);background:var(--ink-850);
+}
+.align-bar b{font-size:10.5px;font-weight:700;letter-spacing:.11em;text-transform:uppercase;color:var(--muted-deep);margin-right:3px}
+.align-bar .mini-btn{padding:4px 10px;font-size:13px;line-height:1}
+.align-sep{width:1px;height:16px;background:var(--line);margin:0 4px}
+.align-note{font-size:11px;color:var(--muted-deep);margin-left:6px}
+
+/* a multi-selection reads as a set, not as one thing */
+.lay.selected{outline:1.5px solid var(--blue-bright) !important;outline-offset:.6cqw}
+.device.dragmode .lay.selected{box-shadow:0 0 0 .35cqw rgba(74,133,255,.22)}

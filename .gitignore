@@ -22,3 +22,4 @@ next-env.d.ts
 .wrangler/
 worker-configuration.d.ts
 .dev.vars
+.next-dev/
