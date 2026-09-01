@@ -198,6 +198,10 @@ export function Device(props: DeviceProps) {
       el.classList.remove("grabbing");
       read.remove();
       const { x, y } = at(e);
+      // a click that never moved is a selection, not a drag: committing it would
+      // silently give this layer a per-placement override it never asked for
+      const moved = Math.hypot(e.clientX - start.px, e.clientY - start.py) > 2;
+      if (!moved) return;
       if (others.length) onSelectionMove?.(pl.id, x - start.x, y - start.y, layerId);
       onLayerMove(pl.id, layerId, x, y);
     };

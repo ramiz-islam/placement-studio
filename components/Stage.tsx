@@ -6,6 +6,7 @@ import { RATIO_LABEL, fitFor, hasFitOverride, hasOverride } from "@/lib/geometry
 import { audit } from "@/lib/audit";
 import { useStudio } from "./StudioProvider";
 import { Device } from "./Device";
+import { CanvasToolbar } from "./CanvasToolbar";
 
 export function Stage({ onGenerate }: { onGenerate: () => void }) {
   const st = useStudio();
@@ -133,6 +134,7 @@ function FocusView({
 
   return (
     <div className="device-wrap">
+      <CanvasToolbar />
       <Device
         {...common}
         pl={pl}

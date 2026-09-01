@@ -478,23 +478,29 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
 
   const duplicateLayer = useCallback(
     (id: string) => {
-      let newId = "";
-      commit(`dup:${id}`, d => {
-        const i = d.layers.findIndex(l => l.id === id);
-        if (i === -1) return d;
-        const src = d.layers[i];
-        newId = `${src.kind}-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}`;
-        const copy = {
-          ...src,
-          id: newId,
-          name: `${src.name} copy`,
-          pos: { x: src.pos.x + 0.03, y: src.pos.y + 0.03 },
-        } as Layer;
-        const layers = [...d.layers];
-        layers.splice(i + 1, 0, copy);
-        return { ...d, layers };
-      });
-      setS(prev => (newId ? { ...prev, selectedIds: [newId] } : prev));
+      // Mint the id before the updater runs. Reading it back out of the updater
+      // afterwards left the copy unselected — the updater is called during
+      // render, and twice in development — so you lost your selection, and with
+      // it the floating toolbar, the moment you duplicated anything.
+      const newId = `copy-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}`;
+      commit(
+        `dup:${id}`,
+        d => {
+          const i = d.layers.findIndex(l => l.id === id);
+          if (i === -1) return d;
+          const src = d.layers[i];
+          const copy = {
+            ...src,
+            id: newId,
+            name: `${src.name} copy`,
+            pos: { x: src.pos.x + 0.03, y: src.pos.y + 0.03 },
+          } as Layer;
+          const layers = [...d.layers];
+          layers.splice(i + 1, 0, copy);
+          return { ...d, layers };
+        },
+        { selectedIds: [newId] }
+      );
     },
     [commit]
   );

@@ -245,7 +245,7 @@ input[type=range]::-moz-range-thumb{width:13px;height:13px;border:none;border-ra
 .ch-instbar .btn2{margin-left:auto;background:var(--lime);color:#141652;border-radius:1.4cqw;padding:1.8cqw 3.6cqw;font-size:2.8cqw;font-weight:700;text-shadow:none}
 
 /* device caption + legend */
-.device-wrap{display:flex;flex-direction:column;align-items:center;gap:10px}
+.device-wrap{position:relative;display:flex;flex-direction:column;align-items:center;gap:10px}
 .device-cap{text-align:center}
 .device-cap .dc-name{font-size:15px;font-weight:800}
 .device-cap .dc-spec{font-family:var(--f-mono);font-size:11.5px;color:var(--muted);margin-top:2px}
@@ -606,3 +606,24 @@ textarea[dir=rtl]{text-align:right}
   border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-bottom:12px}
 .scope-note.local{color:var(--ink);border-color:rgba(4,84,242,.5);background:rgba(4,84,242,.10)}
 .scope-note b{color:var(--blue-bright)}
+
+/* --- the toolbar that follows the selection --------------------------------
+   Six buttons over the canvas beat sixty in a rail: bigger, smaller, that
+   colour, centre it, tuck it behind, drop it. The rail keeps everything else. */
+.canvas-bar{position:absolute;z-index:60;display:flex;align-items:center;gap:2px;
+  padding:4px 5px;border-radius:10px;background:rgba(14,15,26,.94);
+  border:1px solid rgba(255,255,255,.16);
+  box-shadow:0 10px 28px rgba(0,0,0,.55);backdrop-filter:blur(8px);
+  animation:cb-in .12s ease-out}
+@keyframes cb-in{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:none}}
+.cb-name{font-size:10.5px;font-weight:600;letter-spacing:.02em;color:var(--muted);
+  max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:0 5px 0 3px}
+.canvas-bar .cb{width:26px;height:26px;display:grid;place-items:center;border-radius:7px;
+  border:1px solid transparent;background:transparent;color:var(--ink);
+  font-size:14px;line-height:1;cursor:pointer;padding:0}
+.canvas-bar .cb:hover{background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.18)}
+.canvas-bar .cb.danger:hover{background:rgba(255,84,80,.22);border-color:var(--coral)}
+.canvas-bar .cb-ink{position:relative;overflow:hidden}
+.canvas-bar .cb-ink>span{width:15px;height:15px;border-radius:4px;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.35)}
+.canvas-bar .cb-ink>input{position:absolute;inset:0;opacity:0;cursor:pointer;padding:0;border:0}
