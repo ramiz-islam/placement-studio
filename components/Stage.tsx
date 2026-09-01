@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { PLACEMENTS, type LayerKey } from "@/lib/core";
+import { PLACEMENTS } from "@/lib/core";
 import { RATIO_LABEL, hasOverride } from "@/lib/geometry";
 import { audit } from "@/lib/audit";
 import { useStudio } from "./StudioProvider";
@@ -12,8 +12,8 @@ export function Stage({ onGenerate }: { onGenerate: () => void }) {
   const plats = useMemo(() => [...new Set(PLACEMENTS.map(p => p.plat))], []);
 
   // a drag writes only the placement it happened on
-  const onLayerMove = (placementId: string, key: LayerKey, x: number, y: number) =>
-    st.moveLayer(placementId, key, x, y);
+  const onLayerMove = (placementId: string, layerId: string, x: number, y: number) =>
+    st.moveLayer(placementId, layerId, x, y);
 
   if (!st.img || !st.src || !st.meta) {
     return (
@@ -45,18 +45,19 @@ export function Stage({ onGenerate }: { onGenerate: () => void }) {
     );
   }
 
-  const logoAspect = st.logo ? st.logo.naturalHeight / st.logo.naturalWidth : 0.3;
   const common = {
     src: st.src,
     design: st.design,
     logoSrc: st.logoSrc,
-    logoAspect,
+    ctx: st.ctx,
     fit: st.design.fit,
     padColor: st.padColor,
     showZones: st.zones,
     showFlags: st.flags,
     showChrome: st.chrome,
     framed: st.deviceFrame,
+    selectedId: st.selectedId,
+    onSelect: st.select,
   };
 
   return (
@@ -113,7 +114,7 @@ function FocusView({
 }: {
   st: ReturnType<typeof useStudio>;
   common: Common;
-  onLayerMove: (placementId: string, k: LayerKey, x: number, y: number) => void;
+  onLayerMove: (placementId: string, layerId: string, x: number, y: number) => void;
 }) {
   const pl = st.placement;
   const a = audit({
@@ -171,6 +172,7 @@ function FocusView({
           <i className="sw res" />
           Reserved for platform UI
         </span>
+        <span>{st.design.layers.filter(l => l.on).length} layers</span>
         <span>
           <i className="sw safe" />
           Safe box

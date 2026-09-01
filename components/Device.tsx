@@ -1,27 +1,44 @@
 "use client";
 
 /**
- * One placement rendered as a phone/feed frame: the creative, the platform
- * chrome, the draggable copy layers, the reserved bands and the collision map.
+ * One placement rendered as the real ad frame: the creative, the platform
+ * chrome, every layer in paint order, the reserved bands and the collision map.
  *
  * Dragging writes straight to the DOM node during the gesture and commits to
  * state on release — a full re-render per pointermove would recompute audits.
  */
 
 import { useRef } from "react";
-import { isRTL, type Design, type LayerKey, type Placement } from "@/lib/core";
-import { clamp, intrusion, layersFor, layout, logoScrimBox, rgba, safeF, scrimBox } from "@/lib/geometry";
+import type { Design, Placement } from "@/lib/core";
+import { ICON, type Fill } from "@/lib/layers";
+import {
+  clamp,
+  intrusion,
+  placeAll,
+  plateBox,
+  posFor,
+  rgba,
+  safeF,
+  type LayoutContext,
+  type Placed,
+} from "@/lib/geometry";
 import type { Collision } from "@/lib/analysis";
 import { Chrome } from "./Chrome";
 
 const pc = (n: number) => `${(n * 100).toFixed(3)}%`;
+
+/** CSS for a solid colour or a linear gradient. */
+const css = (f: Fill) =>
+  f.color2
+    ? `linear-gradient(${f.angle}deg, ${rgba(f.color, f.opacity)}, ${rgba(f.color2, f.opacity)})`
+    : rgba(f.color, f.opacity);
 
 export interface DeviceProps {
   pl: Placement;
   src: string;
   design: Design;
   logoSrc: string | null;
-  logoAspect: number;
+  ctx: LayoutContext;
   fit: "cover" | "contain";
   padColor: string;
   col: Collision | null;
@@ -33,8 +50,9 @@ export interface DeviceProps {
   small?: boolean;
   /** draw the rounded phone shell; off means the exact ad frame */
   framed?: boolean;
-  /** placementId is passed back so the move is stored against this frame only */
-  onLayerMove?: (placementId: string, key: LayerKey, x: number, y: number) => void;
+  selectedId?: string | null;
+  onSelect?: (layerId: string) => void;
+  onLayerMove?: (placementId: string, layerId: string, x: number, y: number) => void;
 }
 
 export function Device(props: DeviceProps) {
@@ -43,7 +61,7 @@ export function Device(props: DeviceProps) {
     src,
     design: d,
     logoSrc,
-    logoAspect,
+    ctx,
     fit,
     padColor,
     col,
@@ -53,26 +71,29 @@ export function Device(props: DeviceProps) {
     showChrome,
     small,
     framed,
+    selectedId,
+    onSelect,
     onLayerMove,
   } = props;
 
   const deviceRef = useRef<HTMLDivElement>(null);
   const f = safeF(pl);
-  const L = layout(pl, d, logoAspect);
   const cq = (px: number) => `${((px / pl.w) * 100).toFixed(3)}cqw`;
-  const rtl = isRTL(d.lang);
-  const SB = scrimBox(L, d);
-  const LSB = logoScrimBox(pl, L, d);
+  const placed = d.copyOn ? placeAll(pl, d, ctx) : [];
 
-  function startDrag(key: LayerKey, ev: React.PointerEvent<HTMLDivElement>) {
+  function startDrag(layerId: string, ev: React.PointerEvent<HTMLDivElement>) {
+    onSelect?.(layerId);
     if (small || !onLayerMove) return;
     ev.preventDefault();
     const el = ev.currentTarget;
     const device = deviceRef.current;
     if (!device) return;
     const rect = device.getBoundingClientRect();
-    const lay = layersFor(d, pl.id);
-    const start = { px: ev.clientX, py: ev.clientY, x: lay[key].x, y: lay[key].y };
+    const layer = d.layers.find(l => l.id === layerId);
+    if (!layer) return;
+    const from = posFor(d, pl.id, layer);
+    const start = { px: ev.clientX, py: ev.clientY, x: from.x, y: from.y };
+    const isBand = layer.kind === "shape" && layer.shape === "band";
     el.setPointerCapture(ev.pointerId);
     el.classList.add("grabbing");
 
@@ -87,18 +108,16 @@ export function Device(props: DeviceProps) {
 
     const move = (e: PointerEvent) => {
       const { x, y } = at(e);
-      el.style.left = pc(x);
       el.style.top = pc(y);
-      read.style.left = pc(x);
+      if (!isBand) el.style.left = pc(x);
+      read.style.left = pc(Math.max(0, x));
       read.style.top = pc(Math.max(0, y - 0.045));
       read.textContent = `${Math.round(x * pl.w)}, ${Math.round(y * pl.h)} px`;
-      const box = {
-        x,
-        y,
-        w: el.offsetWidth / rect.width,
-        h: el.offsetHeight / rect.height,
-      };
-      el.classList.toggle("bad-zone", intrusion(pl, box).worst > 4);
+      el.classList.toggle(
+        "bad-zone",
+        !isBand &&
+          intrusion(pl, { x, y, w: el.offsetWidth / rect.width, h: el.offsetHeight / rect.height }).worst > 4
+      );
     };
     const up = (e: PointerEvent) => {
       el.releasePointerCapture(ev.pointerId);
@@ -107,7 +126,7 @@ export function Device(props: DeviceProps) {
       el.classList.remove("grabbing");
       read.remove();
       const { x, y } = at(e);
-      onLayerMove(pl.id, key, x, y);
+      onLayerMove(pl.id, layerId, x, y);
     };
     el.addEventListener("pointermove", move);
     el.addEventListener("pointerup", up);
@@ -116,6 +135,170 @@ export function Device(props: DeviceProps) {
   const safeW = Math.round(pl.w * (1 - f.l - f.r));
   const safeH = Math.round(pl.h * (1 - f.t - f.b));
 
+  function renderLayer(p: Placed, i: number) {
+    const l = p.layer;
+    const isBand = l.kind === "shape" && l.shape === "band";
+    const bad = !isBand && intrusion(pl, p.box).worst > 4;
+    const cls = `lay lay-${l.kind}${bad ? " bad-zone" : ""}${selectedId === l.id ? " selected" : ""}`;
+    const base: React.CSSProperties = { left: pc(p.box.x), top: pc(p.box.y), zIndex: 6 + i };
+    const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => startDrag(l.id, e);
+
+    switch (l.kind) {
+      case "shape":
+        return (
+          <div
+            key={l.id}
+            data-layer={l.id}
+            className={cls}
+            onPointerDown={onPointerDown}
+            style={{
+              ...base,
+              width: pc(p.box.w),
+              height: pc(p.box.h),
+              background: css(l.fill),
+              borderRadius: l.shape === "ellipse" ? "50%" : `${l.radius}%`,
+            }}
+          />
+        );
+
+      case "icon":
+        return (
+          <div
+            key={l.id}
+            data-layer={l.id}
+            className={cls}
+            onPointerDown={onPointerDown}
+            style={{ ...base, width: pc(p.box.w) }}
+          >
+            {l.src ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={l.src} alt={l.name} />
+            ) : (
+              <svg viewBox="0 0 24 24" style={{ display: "block", width: "100%", height: "auto", fill: l.color }}>
+                <path d={ICON(l.icon).d} />
+              </svg>
+            )}
+          </div>
+        );
+
+      case "logo": {
+        if (!logoSrc) return null;
+        const platePad = (l.plate.pad / 100) * 100;
+        const bandPad = (l.band.pad / 100) * 100;
+        return (
+          <div
+            key={l.id}
+            data-layer={l.id}
+            className={cls}
+            onPointerDown={onPointerDown}
+            style={{ ...base, width: pc(p.box.w) }}
+          >
+            {l.band.on ? (
+              <span
+                className="logo-band"
+                aria-hidden="true"
+                style={{
+                  // stretch to the full frame width regardless of the logo's box
+                  left: `${(-p.box.x / p.box.w) * 100}%`,
+                  width: `${(1 / p.box.w) * 100}%`,
+                  top: `-${bandPad}%`,
+                  bottom: `-${bandPad}%`,
+                  background: css(l.band.fill),
+                }}
+              />
+            ) : null}
+            {l.plate.on ? (
+              <span
+                className="scrim-bg"
+                aria-hidden="true"
+                style={{
+                  inset: `-${platePad}%`,
+                  background: css(l.plate.fill),
+                  borderRadius: `${l.plate.radius}%`,
+                }}
+              />
+            ) : null}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={logoSrc} alt="Brand logo" />
+          </div>
+        );
+      }
+
+      case "cta": {
+        if (p.metrics.kind !== "cta") return null;
+        const m = p.metrics;
+        return (
+          <div
+            key={l.id}
+            data-layer={l.id}
+            className={cls}
+            onPointerDown={onPointerDown}
+            style={{
+              ...base,
+              background: css(l.bg),
+              color: l.ink,
+              fontFamily: m.fontCss,
+              fontSize: cq(m.sizePx),
+              padding: `${cq(m.sizePx * 0.75)} ${cq(m.sizePx * 1.1)}`,
+              borderRadius: `${l.radius}%`,
+            }}
+          >
+            {l.text}
+          </div>
+        );
+      }
+
+      case "text": {
+        if (p.metrics.kind !== "text") return null;
+        const m = p.metrics;
+        const pb = plateBox(pl, p);
+        return (
+          <div
+            key={l.id}
+            data-layer={l.id}
+            className={cls}
+            onPointerDown={onPointerDown}
+            dir={m.rtl ? "rtl" : undefined}
+            style={{
+              ...base,
+              width: pc(p.box.w),
+              color: l.color,
+              fontFamily: m.fontCss,
+              fontWeight: m.weight,
+              fontSize: cq(m.sizePx),
+              lineHeight: m.lh,
+              letterSpacing: l.tracking ? `${l.tracking}em` : undefined,
+              textAlign: m.rtl ? "right" : "left",
+              textShadow: "0 .3cqw 1.4cqw rgba(0,0,0,.28)",
+            }}
+          >
+            {l.scrim.on ? (
+              <span
+                className="scrim-bg"
+                aria-hidden="true"
+                style={{
+                  inset: `-${cq(pb.padY)} -${cq(pb.padX)}`,
+                  background: css(l.scrim.fill),
+                  borderRadius: cq(pb.radius),
+                }}
+              />
+            ) : null}
+            {m.lines.map((line, li) => (
+              <span className="ln" key={li}>
+                {line.map((t, ti) => (
+                  <span key={ti} style={t.accent ? { color: l.color2 } : undefined}>
+                    {t.text}
+                    {ti < line.length - 1 ? " " : ""}
+                  </span>
+                ))}
+              </span>
+            ))}
+          </div>
+        );
+      }
+    }
+  }
+
   return (
     <div
       ref={deviceRef}
@@ -123,115 +306,14 @@ export function Device(props: DeviceProps) {
       style={{ width, aspectRatio: `${pl.w}/${pl.h}` }}
     >
       <div className={`media fit-${fit}`} style={fit === "contain" ? { background: padColor } : undefined}>
-        {/* the creative is a data URL or a local object URL; next/image adds nothing here */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={src} alt={`Creative previewed in the ${pl.plat} ${pl.name} placement`} />
       </div>
 
-      {showChrome ? (
-        <Chrome pl={pl} brand={d.brand || "CarSwitch"} cta={d.cta || "Learn more"} caption={d.head || "Sponsored"} />
-      ) : null}
+      {showChrome ? <Chrome pl={pl} brand={chromeBrand(d)} cta={chromeCta(d)} caption={chromeCaption(d)} /> : null}
 
-      {/* ---- copy layers ---- */}
-      {logoSrc ? (
-        <div
-          className={`lay lay-logo${intrusion(pl, L.logo).worst > 4 ? " bad-zone" : ""}`}
-          data-layer="logo"
-          style={{ left: pc(L.logo.x), top: pc(L.logo.y), width: pc(L.logo.w) }}
-          onPointerDown={e => startDrag("logo", e)}
-        >
-          {d.logoScrim ? (
-            <span
-              className="scrim-bg"
-              aria-hidden="true"
-              style={{
-                inset: `-${cq(LSB.pad)}`,
-                background: rgba(d.logoScrimColor, d.logoScrimOpacity),
-                borderRadius: cq(LSB.radius),
-              }}
-            />
-          ) : null}
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={logoSrc} alt="Brand logo" />
-        </div>
-      ) : null}
+      {placed.map(renderLayer)}
 
-      {d.copyOn && (d.head || d.brand) ? (
-        <div
-          className={`lay lay-head${intrusion(pl, L.head).worst > 4 ? " bad-zone" : ""}`}
-          data-layer="head"
-          dir={rtl ? "rtl" : undefined}
-          style={{
-            left: pc(L.head.x),
-            top: pc(L.head.y),
-            width: pc(L.head.w),
-            color: d.headColor,
-            textShadow: "0 .3cqw 1.4cqw rgba(0,0,0,.3)",
-          }}
-          onPointerDown={e => startDrag("head", e)}
-        >
-          {d.scrim ? (
-            <span
-              className="scrim-bg"
-              aria-hidden="true"
-              style={{
-                inset: `-${cq(SB.padY)} -${cq(SB.padX)}`,
-                background: rgba(d.scrimColor, d.scrimOpacity),
-                borderRadius: cq(SB.radius),
-              }}
-            />
-          ) : null}
-          {d.brand ? (
-            <div className="lay-brand" style={{ fontSize: cq(L.head.brandPx) }}>
-              {d.brand}
-            </div>
-          ) : null}
-          {d.head ? (
-            <p
-              className="lay-title"
-              style={{
-                fontFamily: L.head.font.css,
-                fontWeight: L.head.font.weight,
-                fontSize: cq(L.head.headPx),
-                lineHeight: L.head.lh,
-              }}
-            >
-              {/* one node per computed line, so the browser cannot re-wrap it
-                  somewhere the exporter would not */}
-              {L.head.lines.map((line, i) => (
-                <span className="ln" key={i}>
-                  {line.map((t, j) => (
-                    <span key={j} style={t.accent ? { color: d.headColor2 } : undefined}>
-                      {t.text}
-                      {j < line.length - 1 ? " " : ""}
-                    </span>
-                  ))}
-                </span>
-              ))}
-            </p>
-          ) : null}
-        </div>
-      ) : null}
-
-      {d.copyOn && d.cta ? (
-        <div
-          className={`lay lay-cta${intrusion(pl, L.cta).worst > 4 ? " bad-zone" : ""}`}
-          data-layer="cta"
-          dir={rtl ? "rtl" : undefined}
-          style={{
-            left: pc(L.cta.x),
-            top: pc(L.cta.y),
-            background: d.ctaBg,
-            color: d.ctaInk,
-            fontSize: cq(L.cta.ctaPx),
-          }}
-          onPointerDown={e => startDrag("cta", e)}
-        >
-          {d.cta}
-        </div>
-      ) : null}
-
-      {/* ---- reserved bands ---- */}
       <div className={`zones${showZones ? " on" : ""}`}>
         {pl.safe.t ? <div className="band" style={{ top: 0, left: 0, right: 0, height: pc(f.t) }} /> : null}
         {pl.safe.b ? <div className="band" style={{ bottom: 0, left: 0, right: 0, height: pc(f.b) }} /> : null}
@@ -253,4 +335,23 @@ export function Device(props: DeviceProps) {
       ) : null}
     </div>
   );
+}
+
+/* The chrome mocks want a brand name, a CTA label and a caption. Pull them from
+   whatever layers exist rather than from fixed fields. */
+function textLayers(d: Design) {
+  return d.layers.filter(l => l.kind === "text" && l.on && l.text.trim());
+}
+function chromeBrand(d: Design): string {
+  const t = textLayers(d)[0];
+  return t && t.kind === "text" ? t.text.replace(/[[\]]/g, "") : "CarSwitch";
+}
+function chromeCaption(d: Design): string {
+  const list = textLayers(d);
+  const t = list[1] ?? list[0];
+  return t && t.kind === "text" ? t.text.replace(/[[\]]/g, "") : "Sponsored";
+}
+function chromeCta(d: Design): string {
+  const c = d.layers.find(l => l.kind === "cta" && l.on);
+  return c && c.kind === "cta" ? c.text : "Learn more";
 }
