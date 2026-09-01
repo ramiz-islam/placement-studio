@@ -16,12 +16,12 @@ Push the repo **private**. It contains no keys (`.env.local` and `.dev.vars` are
 
 ## 1. GitHub
 
-The repo already exists locally with full history on `master`. Create an empty **private** repo on GitHub called `placement-studio`, then:
+The repo already exists locally with full history on `main`. Create an empty **private** repo on GitHub called `placement-studio`, then:
 
 ```bash
 cd C:\Users\seora\placement-studio
 git remote add origin https://github.com/<your-org>/placement-studio.git
-git push -u origin master
+git push -u origin main
 ```
 
 Verify nothing sensitive went up:
@@ -73,7 +73,7 @@ In the Cloudflare dashboard: **Workers & Pages → Create → Workers → Connec
 | Deploy command | `npx wrangler deploy` |
 | Root directory | *(leave blank)* |
 
-Add the same three secrets as environment variables in the dashboard, and bind the R2 bucket (`GENERATIONS` → `placement-studio-generations`) under the Worker's settings. After that, every push to `master` deploys.
+Add the same three secrets as environment variables in the dashboard, and bind the R2 bucket (`GENERATIONS` → `placement-studio-generations`) under the Worker's settings. After that, every push to `main` deploys.
 
 ---
 
