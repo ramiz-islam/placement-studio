@@ -57,6 +57,14 @@ function Studio() {
         if (typing) return;
         e.preventDefault();
         st.redo();
+      } else if ((e.key === "]" || e.key === "[") && st.selectedId && !typing) {
+        e.preventDefault();
+        if (e.shiftKey) {
+          if (e.key === "]") st.toFront(st.selectedId);
+          else st.toBack(st.selectedId);
+        } else {
+          st.reorderLayer(st.selectedId, e.key === "]" ? 1 : -1);
+        }
       }
     };
     window.addEventListener("keydown", onKey);

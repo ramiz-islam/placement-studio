@@ -11,6 +11,24 @@ import { ICON, type Layer, type TextLayer } from "./layers";
 
 export const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 
+/**
+ * Keep a dragged layer partly on the frame.
+ *
+ * Bleeding a shape off the edge is a real technique, so a layer may go almost
+ * entirely outside — but never fully, because a layer you cannot see is a layer
+ * you cannot get back.
+ */
+export const MIN_ON_FRAME = 0.12;
+
+export function clampPos(box: { w: number; h: number }, x: number, y: number) {
+  const w = Math.max(box.w, 0.02);
+  const h = Math.max(box.h, 0.02);
+  return {
+    x: clamp(x, -(w * (1 - MIN_ON_FRAME)), 1 - w * MIN_ON_FRAME),
+    y: clamp(y, -(h * (1 - MIN_ON_FRAME)), 1 - h * MIN_ON_FRAME),
+  };
+}
+
 /** Crop or letterbox is a per-channel decision, with a shared default. */
 export const fitFor = (d: Design, placementId: string): Fit => d.fitOverrides[placementId] ?? d.fit;
 export const hasFitOverride = (d: Design, placementId: string) => placementId in d.fitOverrides;
