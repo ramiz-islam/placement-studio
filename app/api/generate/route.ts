@@ -106,7 +106,7 @@ export async function POST(req: Request) {
       });
     }
 
-    return NextResponse.json({ prompt, model, driver: storageDriver(), results });
+    return NextResponse.json({ prompt, model, driver: await storageDriver(), results });
   } catch (err: unknown) {
     const e = err as { status?: number; message?: string };
     const status = e.status ?? 500;

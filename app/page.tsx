@@ -44,10 +44,24 @@ function Studio() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setSheet(null);
+      const meta = e.ctrlKey || e.metaKey;
+      if (!meta) return;
+      const k = e.key.toLowerCase();
+      // never steal the shortcut from a field the user is typing in
+      const el = document.activeElement;
+      const typing = el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement;
+      if (k === "z" && !e.shiftKey && !typing) {
+        e.preventDefault();
+        st.undo();
+      } else if ((k === "z" && e.shiftKey) || k === "y") {
+        if (typing) return;
+        e.preventDefault();
+        st.redo();
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [st]);
 
   // Drag a file anywhere onto the window.
   useEffect(() => {
@@ -89,6 +103,15 @@ function Studio() {
           </button>
           <button aria-pressed={st.view === "grid"} onClick={() => st.patch({ view: "grid" })} type="button">
             All placements
+          </button>
+        </div>
+
+        <div className="seg" role="group" aria-label="History">
+          <button onClick={st.undo} disabled={!st.canUndo} title="Undo (Ctrl+Z)" type="button">
+            ↶ Undo{st.canUndo ? ` ${st.canUndo}` : ""}
+          </button>
+          <button onClick={st.redo} disabled={!st.canRedo} title="Redo (Ctrl+Shift+Z)" type="button">
+            ↷ Redo
           </button>
         </div>
 

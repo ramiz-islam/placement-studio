@@ -32,6 +32,55 @@ export interface RenderOpts {
   logo: HTMLImageElement | null;
   design: Design;
   ctx: LayoutContext;
+  /** uploaded shape and icon images, keyed by src — see preloadLayerImages */
+  images?: Map<string, HTMLImageElement>;
+}
+
+/**
+ * Decode every uploaded shape/icon image before a render. Without this an
+ * upload can silently miss the export, because drawImage on a half-decoded
+ * image is a no-op.
+ */
+export async function preloadLayerImages(design: Design): Promise<Map<string, HTMLImageElement>> {
+  const srcs = new Set<string>();
+  for (const l of design.layers) {
+    if ((l.kind === "icon" || l.kind === "shape") && l.src) srcs.add(l.src);
+  }
+  const out = new Map<string, HTMLImageElement>();
+  await Promise.all(
+    [...srcs].map(
+      src =>
+        new Promise<void>(res => {
+          const im = new Image();
+          im.onload = () => {
+            out.set(src, im);
+            res();
+          };
+          im.onerror = () => res();
+          im.src = src;
+        })
+    )
+  );
+  return out;
+}
+
+/** The path for a shape, ready to fill or clip. */
+function shapePath(g: CanvasRenderingContext2D, shape: string, x: number, y: number, w: number, h: number, radius: number) {
+  if (shape === "ellipse") {
+    g.beginPath();
+    g.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2);
+    g.closePath();
+    return;
+  }
+  if (shape === "triangle") {
+    g.beginPath();
+    g.moveTo(x + w / 2, y);
+    g.lineTo(x + w, y + h);
+    g.lineTo(x, y + h);
+    g.closePath();
+    return;
+  }
+  roundRect(g, x, y, w, h, (Math.min(w, h) * radius) / 100);
 }
 
 function roundRect(g: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
@@ -121,24 +170,37 @@ function drawLayer(
   switch (p.layer.kind) {
     case "shape": {
       const l = p.layer;
-      g.fillStyle = paint(g, l.fill, x, y, w, h);
-      if (l.shape === "ellipse") {
-        g.beginPath();
-        g.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2);
-        g.fill();
-      } else {
-        const shorter = Math.min(w, h);
-        roundRect(g, x, y, w, h, (shorter * l.radius) / 100);
-        g.fill();
+      const picture = l.src ? logoCache.get(l.src) : null;
+      if (picture) {
+        // an uploaded image, clipped to the shape
+        g.save();
+        shapePath(g, l.shape, x, y, w, h, l.radius);
+        g.clip();
+        const cr = coverRect(picture.naturalWidth, picture.naturalHeight, w, h, "cover");
+        g.drawImage(resampled(picture, cr.w, cr.h), x + cr.x, y + cr.y, cr.w, cr.h);
+        g.restore();
+        return;
       }
+      g.fillStyle = paint(g, l.fill, x, y, w, h);
+      shapePath(g, l.shape, x, y, w, h, l.radius);
+      g.fill();
       return;
     }
 
     case "icon": {
       const l = p.layer;
       const custom = l.src ? logoCache.get(l.src) : null;
+      const ih = custom ? w * (custom.naturalHeight / custom.naturalWidth) : w;
+
+      if (l.scrim.on) {
+        const pad = (w * l.scrim.pad) / 100;
+        const shorter = Math.min(w + pad * 2, ih + pad * 2);
+        g.fillStyle = paint(g, l.scrim.fill, x - pad, y - pad, w + pad * 2, ih + pad * 2);
+        roundRect(g, x - pad, y - pad, w + pad * 2, ih + pad * 2, (shorter * l.scrim.radius) / 100);
+        g.fill();
+      }
       if (custom) {
-        g.drawImage(resampled(custom, w, w * (custom.naturalHeight / custom.naturalWidth)), x, y, w, w * (custom.naturalHeight / custom.naturalWidth));
+        g.drawImage(resampled(custom, w, ih), x, y, w, ih);
         return;
       }
       if (p.metrics.kind !== "icon") return;
@@ -258,14 +320,7 @@ export function renderPlacement(pl: Placement, o: RenderOpts): HTMLCanvasElement
   g.drawImage(resampled(o.img, r.w, r.h), r.x, r.y, r.w, r.h);
 
   if (o.copy && o.design.copyOn) {
-    const cache = new Map<string, HTMLImageElement>();
-    for (const p of placeAll(pl, o.design, o.ctx)) {
-      if (p.layer.kind === "icon" && p.layer.src) {
-        const im = new Image();
-        im.src = p.layer.src;
-        if (im.complete) cache.set(p.layer.src, im);
-      }
-    }
+    const cache = o.images ?? new Map<string, HTMLImageElement>();
     for (const p of placeAll(pl, o.design, o.ctx)) drawLayer(g, p, pl, o, W, H, cache);
   }
 

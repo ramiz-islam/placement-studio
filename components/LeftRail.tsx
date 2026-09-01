@@ -97,17 +97,20 @@ export function LeftRail({ onGenerate }: { onGenerate: () => void }) {
         {st.img ? (
           <>
             <div className="row">
-              <MiniBtn on={d.fit === "cover"} onClick={() => st.patchDesign({ fit: "cover" })}>
+              <MiniBtn on={d.fit === "cover"} onClick={() => st.setFitDefault("cover")}>
                 Crop to fill
               </MiniBtn>
-              <MiniBtn on={d.fit === "contain"} onClick={() => st.patchDesign({ fit: "contain" })}>
+              <MiniBtn on={d.fit === "contain"} onClick={() => st.setFitDefault("contain")}>
                 Letterbox
               </MiniBtn>
             </div>
             <p className="hint">
-              {d.fit === "cover"
-                ? "Crop to fill is how every feed renders a mismatched ratio — it is the honest preview."
-                : "Letterboxing keeps the whole frame but reads as a repurposed asset."}
+              The <b>default</b> for every channel. Any placement can differ — set that on the frame itself.
+              {Object.keys(d.fitOverrides).length
+                ? ` ${Object.keys(d.fitOverrides).length} ${
+                    Object.keys(d.fitOverrides).length === 1 ? "placement overrides" : "placements override"
+                  } it.`
+                : ""}
             </p>
           </>
         ) : null}

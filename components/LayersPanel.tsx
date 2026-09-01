@@ -12,9 +12,31 @@
 import { useRef } from "react";
 import { FONTS } from "@/lib/core";
 import { ICONS, type CtaLayer, type Fill, type IconLayer, type Layer, type LogoLayer, type ShapeLayer, type TextLayer } from "@/lib/layers";
-import { plainText } from "@/lib/geometry";
+import { plainText, toggleWord, wordFlags } from "@/lib/geometry";
 import { shrinkImage, useStudio } from "./StudioProvider";
 import { ColorField, Field, MiniBtn } from "./ui";
+
+/**
+ * The textarea shows plain words; the accent markup lives in the stored string.
+ * When the text is edited we keep accents for words that survived, by position.
+ */
+function reflow(stored: string, plain: string): string {
+  const flags = wordFlags(stored);
+  const words = plain.split(/\s+/).filter(Boolean);
+  const next = words.map((word, i) => ({ word, accent: flags[i]?.word === word ? flags[i].accent : false }));
+  const rebuilt: string[] = [];
+  let i = 0;
+  while (i < next.length) {
+    const accent = next[i].accent;
+    const group: string[] = [];
+    while (i < next.length && next[i].accent === accent) {
+      group.push(next[i].word);
+      i++;
+    }
+    rebuilt.push(accent ? `[${group.join(" ")}]` : group.join(" "));
+  }
+  return rebuilt.join(" ");
+}
 
 const KIND_ICON: Record<string, string> = {
   text: "T",
@@ -204,13 +226,30 @@ function TextInspector({ l, set }: { l: TextLayer; set: Set }) {
     <>
       <Field label="Text" hint={`${plainText(l.text).length} ch`}>
         <textarea
-          value={l.text}
+          value={plainText(l.text)}
           dir={rtl ? "rtl" : "ltr"}
-          onChange={e => set({ text: e.target.value } as Partial<Layer>)}
+          onChange={e => set({ text: reflow(l.text, e.target.value) } as Partial<Layer>)}
           style={{ minHeight: 56 }}
         />
+      </Field>
+
+      <Field label="Second colour" hint="tap a word">
+        <div className="word-pick" dir={rtl ? "rtl" : undefined}>
+          {wordFlags(l.text).map((wf, i) => (
+            <button
+              key={`${i}-${wf.word}`}
+              className="word"
+              aria-pressed={wf.accent}
+              type="button"
+              style={wf.accent ? { color: l.color2, borderColor: l.color2 } : undefined}
+              onClick={() => set({ text: toggleWord(l.text, i) } as Partial<Layer>)}
+            >
+              {wf.word}
+            </button>
+          ))}
+        </div>
         <p className="hint">
-          Wrap words in <b>[square brackets]</b> for the second colour.
+          Tap any word to flip it to the second colour. Tap again to put it back.
         </p>
       </Field>
 
@@ -406,7 +445,7 @@ function LogoInspector({ l, set }: { l: LogoLayer; set: Set }) {
 
       <div className="row">
         <MiniBtn on={l.plate.on} onClick={() => set({ plate: { ...l.plate, on: !l.plate.on } } as Partial<Layer>)}>
-          Plate
+          Scrim
         </MiniBtn>
         <MiniBtn on={l.band.on} onClick={() => set({ band: { ...l.band, on: !l.band.on } } as Partial<Layer>)}>
           Full-width band
@@ -415,8 +454,8 @@ function LogoInspector({ l, set }: { l: LogoLayer; set: Set }) {
 
       {l.plate.on ? (
         <div className="subpanel">
-          <FillFields label="Plate" fill={l.plate.fill} onChange={f => set({ plate: { ...l.plate, fill: f } } as Partial<Layer>)} />
-          <Field label="Plate padding" hint={`${l.plate.pad}% of logo`}>
+          <FillFields label="Scrim" fill={l.plate.fill} onChange={f => set({ plate: { ...l.plate, fill: f } } as Partial<Layer>)} />
+          <Field label="Scrim padding" hint={`${l.plate.pad}% of logo`}>
             <input
               type="range"
               min={0}
@@ -426,7 +465,7 @@ function LogoInspector({ l, set }: { l: LogoLayer; set: Set }) {
               onChange={e => set({ plate: { ...l.plate, pad: Number(e.target.value) } } as Partial<Layer>)}
             />
           </Field>
-          <Field label="Plate radius" hint={l.plate.radius >= 50 ? "pill" : `${l.plate.radius}%`}>
+          <Field label="Scrim radius" hint={l.plate.radius >= 50 ? "pill" : `${l.plate.radius}%`}>
             <input
               type="range"
               min={0}
@@ -462,12 +501,14 @@ function LogoInspector({ l, set }: { l: LogoLayer; set: Set }) {
 }
 
 function ShapeInspector({ l, set }: { l: ShapeLayer; set: Set }) {
+  const shapeFileRef = useRef<HTMLInputElement>(null);
   return (
     <>
       <Field label="Shape">
         <select value={l.shape} onChange={e => set({ shape: e.target.value as ShapeLayer["shape"] } as Partial<Layer>)}>
           <option value="rect">Rectangle</option>
           <option value="ellipse">Ellipse</option>
+          <option value="triangle">Triangle</option>
           <option value="band">Band — full frame width</option>
           <option value="line">Line</option>
         </select>
@@ -506,7 +547,47 @@ function ShapeInspector({ l, set }: { l: ShapeLayer; set: Set }) {
           />
         </Field>
       ) : null}
-      <FillFields label="Fill" fill={l.fill} onChange={f => set({ fill: f } as Partial<Layer>)} />
+      {l.src ? (
+        <div className="creative" style={{ marginBottom: 10 }}>
+          <div className="creative-thumb pad">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={l.src} alt="" />
+          </div>
+          <div className="creative-meta">
+            <div className="creative-name">Image inside the shape</div>
+            <div className="creative-dims">cropped to fill, clipped to the shape</div>
+            <div className="link-row">
+              <button className="link-btn" onClick={() => shapeFileRef.current?.click()} type="button">
+                Replace
+              </button>
+              <button className="link-btn danger" onClick={() => set({ src: null } as Partial<Layer>)} type="button">
+                Back to flat colour
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <>
+          <FillFields label="Fill" fill={l.fill} onChange={f => set({ fill: f } as Partial<Layer>)} />
+          <button className="mini-btn" onClick={() => shapeFileRef.current?.click()} type="button">
+            Upload an image instead
+          </button>
+        </>
+      )}
+      <input
+        ref={shapeFileRef}
+        type="file"
+        accept="image/*"
+        hidden
+        onChange={async e => {
+          const f = e.target.files?.[0];
+          e.target.value = "";
+          if (!f) return;
+          const fr = new FileReader();
+          fr.onload = async ev => set({ src: await shrinkImage(String(ev.target?.result), 1200) } as Partial<Layer>);
+          fr.readAsDataURL(f);
+        }}
+      />
     </>
   );
 }
@@ -583,6 +664,37 @@ function IconInspector({ l, set }: { l: IconLayer; set: Set }) {
         />
       </Field>
       {!l.src ? <ColorField label="Colour" value={l.color} onChange={hex => set({ color: hex } as Partial<Layer>)} /> : null}
+
+      <div className="row">
+        <MiniBtn on={l.scrim.on} onClick={() => set({ scrim: { ...l.scrim, on: !l.scrim.on } } as Partial<Layer>)}>
+          Scrim
+        </MiniBtn>
+      </div>
+      {l.scrim.on ? (
+        <div className="subpanel">
+          <FillFields label="Scrim" fill={l.scrim.fill} onChange={f => set({ scrim: { ...l.scrim, fill: f } } as Partial<Layer>)} />
+          <Field label="Scrim padding" hint={`${l.scrim.pad}% of icon`}>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              step={2}
+              value={l.scrim.pad}
+              onChange={e => set({ scrim: { ...l.scrim, pad: Number(e.target.value) } } as Partial<Layer>)}
+            />
+          </Field>
+          <Field label="Scrim radius" hint={l.scrim.radius >= 50 ? "circle" : `${l.scrim.radius}%`}>
+            <input
+              type="range"
+              min={0}
+              max={50}
+              step={1}
+              value={l.scrim.radius}
+              onChange={e => set({ scrim: { ...l.scrim, radius: Number(e.target.value) } } as Partial<Layer>)}
+            />
+          </Field>
+        </div>
+      ) : null}
     </>
   );
 }

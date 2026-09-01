@@ -1,9 +1,13 @@
 "use client";
 
 /**
- * One store for the whole studio. A single state object with a `patch`
- * updater — deliberately boring, so the flow is readable end to end rather
- * than spread across a dozen reducers.
+ * One store for the whole studio.
+ *
+ * Every change to the design goes through `commit(tag, fn)`, which is also what
+ * makes undo work: it snapshots the previous design before applying the new
+ * one. Rapid edits carrying the same tag — a slider being dragged — collapse
+ * into a single history entry, so one undo takes you back to before the drag
+ * rather than one pixel at a time.
  */
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
@@ -17,6 +21,7 @@ import {
   type BrandKit,
   type CreativeMeta,
   type Design,
+  type Fit,
   type Lang,
   type Placement,
 } from "@/lib/core";
@@ -33,7 +38,17 @@ import {
   type NewLayerDefaults,
 } from "@/lib/layers";
 import { clearAnalysisCache, samplePad } from "@/lib/analysis";
-import { masterZone, safeF, stackInside, type LayoutContext } from "@/lib/geometry";
+import { fitFor, masterZone, safeF, stackInside, type LayoutContext } from "@/lib/geometry";
+
+const HISTORY_LIMIT = 30;
+/** edits with the same tag inside this window collapse into one undo step */
+const COALESCE_MS = 700;
+
+interface HistEntry {
+  design: Design;
+  tag: string;
+  at: number;
+}
 
 export interface StudioState {
   img: HTMLImageElement | null;
@@ -54,33 +69,46 @@ export interface StudioState {
   /** rounded phone shell, off by default — the grid should show the real frame */
   deviceFrame: boolean;
   selectedId: string | null;
+  past: HistEntry[];
+  future: Design[];
   toast: string | null;
 }
 
 export interface Studio extends StudioState {
   placement: Placement;
   ctx: LayoutContext;
+  /** the fit this placement actually uses */
+  fit: Fit;
   patch: (p: Partial<StudioState>) => void;
-  patchDesign: (p: Partial<Design>) => void;
+  patchDesign: (p: Partial<Design>, tag?: string) => void;
   loadCreative: (src: string, name: string, bytes: number) => void;
   loadLogo: (src: string, persist?: boolean) => void;
   clearLogo: () => void;
   setLang: (l: Lang) => void;
   applyKit: (k: BrandKit, persist?: boolean) => void;
   forgetKit: () => void;
+  /* ---- fit, per channel ---- */
+  setFitDefault: (f: Fit) => void;
+  setFitHere: (f: Fit) => void;
+  resetFitHere: () => void;
+  applyFitEverywhere: () => void;
   /* ---- layers ---- */
   addLayer: (kind: LayerKind | "band") => void;
-  updateLayer: (id: string, p: Partial<Layer>) => void;
+  updateLayer: (id: string, p: Partial<Layer>, tag?: string) => void;
   removeLayer: (id: string) => void;
   duplicateLayer: (id: string) => void;
   reorderLayer: (id: string, dir: -1 | 1) => void;
   select: (id: string | null) => void;
-  /** move one layer on ONE placement only */
   moveLayer: (placementId: string, layerId: string, x: number, y: number) => void;
   snapThis: () => void;
   snapAllToMaster: () => void;
   applyToAll: () => void;
   resetThis: () => void;
+  /* ---- history ---- */
+  undo: () => void;
+  redo: () => void;
+  canUndo: number;
+  canRedo: number;
   reset: () => void;
   say: (msg: string) => void;
   kitReady: boolean;
@@ -120,20 +148,64 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     chrome: true,
     deviceFrame: false,
     selectedId: null,
+    past: [],
+    future: [],
     toast: null,
   }));
   const [kitReady, setKitReady] = useState(false);
 
   const patch = useCallback((p: Partial<StudioState>) => setS(prev => ({ ...prev, ...p })), []);
-  const patchDesign = useCallback(
-    (p: Partial<Design>) => setS(prev => ({ ...prev, design: { ...prev.design, ...p } })),
-    []
-  );
 
   const say = useCallback((msg: string) => {
     setS(prev => ({ ...prev, toast: msg }));
     window.setTimeout(() => setS(prev => (prev.toast === msg ? { ...prev, toast: null } : prev)), 2600);
   }, []);
+
+  /* ---------- the one path every design change takes ---------- */
+  const commit = useCallback((tag: string, fn: (d: Design) => Design, extra?: Partial<StudioState>) => {
+    setS(prev => {
+      const next = fn(prev.design);
+      if (next === prev.design) return extra ? { ...prev, ...extra } : prev;
+      const now = Date.now();
+      const last = prev.past[prev.past.length - 1];
+      const coalesce = Boolean(last && last.tag === tag && now - last.at < COALESCE_MS);
+      const past = coalesce
+        ? prev.past.slice(0, -1).concat({ ...last!, at: now })
+        : [...prev.past, { design: prev.design, tag, at: now }].slice(-HISTORY_LIMIT);
+      return { ...prev, ...extra, design: next, past, future: [] };
+    });
+  }, []);
+
+  const undo = useCallback(() => {
+    setS(prev => {
+      const last = prev.past[prev.past.length - 1];
+      if (!last) return prev;
+      return {
+        ...prev,
+        design: last.design,
+        past: prev.past.slice(0, -1),
+        future: [prev.design, ...prev.future].slice(0, HISTORY_LIMIT),
+      };
+    });
+  }, []);
+
+  const redo = useCallback(() => {
+    setS(prev => {
+      const [next, ...rest] = prev.future;
+      if (!next) return prev;
+      return {
+        ...prev,
+        design: next,
+        past: [...prev.past, { design: prev.design, tag: "redo", at: Date.now() }].slice(-HISTORY_LIMIT),
+        future: rest,
+      };
+    });
+  }, []);
+
+  const patchDesign = useCallback(
+    (p: Partial<Design>, tag = "design") => commit(tag, d => ({ ...d, ...p })),
+    [commit]
+  );
 
   /* ---------- brand kit ---------- */
   const applyKit = useCallback((k: BrandKit, persist = true) => {
@@ -159,7 +231,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     }
     if (saved) {
       const kit = saved;
-      setS(prev => ({ ...prev, kit, design: initialDesign(kit) }));
+      setS(prev => ({ ...prev, kit, design: initialDesign(kit), past: [], future: [] }));
       if (kit.logo) loadLogoInto(setS, kit.logo);
     }
     setKitReady(true);
@@ -225,34 +297,86 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   /* ---------- language ----------
-     Swap only the text that is still a preset; anything the user has written
-     is theirs and stays put. */
-  const setLang = useCallback((lang: Lang) => {
-    setS(prev => {
-      const pr = PRESETS[lang];
-      const known = (v: string) => Object.values(PRESETS).some(p => Object.values(p).includes(v.trim()));
-      const rtl = isRTL(lang);
-      let headDone = false;
-      const layers = prev.design.layers.map(l => {
-        if (l.kind === "cta") return known(l.text) ? { ...l, text: pr.cta } : l;
-        if (l.kind !== "text") return l;
-        if (!known(l.text)) return l;
-        // Plus Jakarta Sans has no Arabic coverage
-        const font = rtl && l.font === "jakarta" ? "cairo" : l.font;
-        if (!headDone && l.text.trim() === prev.kit.brand.trim()) return { ...l, font, text: rtl ? pr.brand : prev.kit.brand };
-        if (!headDone) {
-          headDone = true;
-          return { ...l, font, text: pr.head };
-        }
-        return { ...l, font };
+     Swap only text that is still a preset; anything written by hand stays. */
+  const setLang = useCallback(
+    (lang: Lang) => {
+      setS(prev => {
+        const pr = PRESETS[lang];
+        const known = (v: string) => Object.values(PRESETS).some(p => Object.values(p).includes(v.trim()));
+        const rtl = isRTL(lang);
+        let headDone = false;
+        const layers = prev.design.layers.map(l => {
+          if (l.kind === "cta") return known(l.text) ? { ...l, text: pr.cta } : l;
+          if (l.kind !== "text") return l;
+          const font = rtl && l.font === "jakarta" ? "cairo" : l.font;
+          if (!known(l.text)) return { ...l, font };
+          if (!headDone && l.text.trim() === prev.kit.brand.trim())
+            return { ...l, font, text: rtl ? pr.brand : prev.kit.brand };
+          if (!headDone) {
+            headDone = true;
+            return { ...l, font, text: pr.head };
+          }
+          return { ...l, font };
+        });
+        const now = Date.now();
+        return {
+          ...prev,
+          design: { ...prev.design, lang, layers },
+          past: [...prev.past, { design: prev.design, tag: "lang", at: now }].slice(-HISTORY_LIMIT),
+          future: [],
+        };
       });
-      return { ...prev, design: { ...prev.design, lang, layers } };
+    },
+    []
+  );
+
+  /* ---------- fit, per channel ---------- */
+  const setFitDefault = useCallback((f: Fit) => commit("fit", d => ({ ...d, fit: f })), [commit]);
+  const setFitHere = useCallback(
+    (f: Fit) =>
+      setS(prev =>
+        prev.design.fitOverrides[prev.active] === f
+          ? prev
+          : {
+              ...prev,
+              design: { ...prev.design, fitOverrides: { ...prev.design.fitOverrides, [prev.active]: f } },
+              past: [...prev.past, { design: prev.design, tag: "fitHere", at: Date.now() }].slice(-HISTORY_LIMIT),
+              future: [],
+            }
+      ),
+    []
+  );
+  const resetFitHere = useCallback(
+    () =>
+      setS(prev => {
+        const fitOverrides = { ...prev.design.fitOverrides };
+        delete fitOverrides[prev.active];
+        return {
+          ...prev,
+          design: { ...prev.design, fitOverrides },
+          past: [...prev.past, { design: prev.design, tag: "fitReset", at: Date.now() }].slice(-HISTORY_LIMIT),
+          future: [],
+        };
+      }),
+    []
+  );
+  const applyFitEverywhere = useCallback(() => {
+    setS(prev => {
+      const here = fitFor(prev.design, prev.active);
+      return {
+        ...prev,
+        design: { ...prev.design, fit: here, fitOverrides: {} },
+        past: [...prev.past, { design: prev.design, tag: "fitAll", at: Date.now() }].slice(-HISTORY_LIMIT),
+        future: [],
+      };
     });
-  }, []);
+    say("That fit is now the default everywhere");
+  }, [say]);
 
   /* ---------- layers ---------- */
   const addLayer = useCallback(
     (kind: LayerKind | "band") => {
+      let madeId = "";
       setS(prev => {
         const d = kitDefaults(prev.kit);
         const made: Layer =
@@ -267,10 +391,13 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
                   : kind === "band"
                     ? bandLayer()
                     : shapeLayer();
+        madeId = made.id;
         return {
           ...prev,
           selectedId: made.id,
           design: { ...prev.design, layers: [...prev.design.layers, made] },
+          past: [...prev.past, { design: prev.design, tag: `add:${madeId}`, at: Date.now() }].slice(-HISTORY_LIMIT),
+          future: [],
         };
       });
       say(`${kind === "band" ? "Band" : kind} layer added`);
@@ -278,78 +405,79 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     [say]
   );
 
-  const updateLayer = useCallback((id: string, p: Partial<Layer>) => {
-    setS(prev => ({
-      ...prev,
-      design: {
-        ...prev.design,
-        layers: prev.design.layers.map(l => (l.id === id ? ({ ...l, ...p } as Layer) : l)),
-      },
-    }));
-  }, []);
+  const updateLayer = useCallback(
+    (id: string, p: Partial<Layer>, tag?: string) =>
+      commit(tag ?? `layer:${id}:${Object.keys(p).join(",")}`, d => ({
+        ...d,
+        layers: d.layers.map(l => (l.id === id ? ({ ...l, ...p } as Layer) : l)),
+      })),
+    [commit]
+  );
 
-  const removeLayer = useCallback((id: string) => {
-    setS(prev => {
-      const overrides: Design["overrides"] = {};
-      for (const [plId, per] of Object.entries(prev.design.overrides)) {
-        const copy = { ...per };
-        delete copy[id];
-        if (Object.keys(copy).length) overrides[plId] = copy;
-      }
-      return {
-        ...prev,
-        selectedId: prev.selectedId === id ? null : prev.selectedId,
-        design: { ...prev.design, layers: prev.design.layers.filter(l => l.id !== id), overrides },
-      };
-    });
-  }, []);
+  const removeLayer = useCallback(
+    (id: string) =>
+      commit(
+        `remove:${id}`,
+        d => {
+          const overrides: Design["overrides"] = {};
+          for (const [plId, per] of Object.entries(d.overrides)) {
+            const copy = { ...per };
+            delete copy[id];
+            if (Object.keys(copy).length) overrides[plId] = copy;
+          }
+          return { ...d, layers: d.layers.filter(l => l.id !== id), overrides };
+        },
+        { selectedId: null }
+      ),
+    [commit]
+  );
 
-  const duplicateLayer = useCallback((id: string) => {
-    setS(prev => {
-      const i = prev.design.layers.findIndex(l => l.id === id);
-      if (i === -1) return prev;
-      const src = prev.design.layers[i];
-      const copy = {
-        ...src,
-        id: `${src.kind}-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}`,
-        name: `${src.name} copy`,
-        pos: { x: src.pos.x + 0.03, y: src.pos.y + 0.03 },
-      } as Layer;
-      const layers = [...prev.design.layers];
-      layers.splice(i + 1, 0, copy);
-      return { ...prev, selectedId: copy.id, design: { ...prev.design, layers } };
-    });
-  }, []);
+  const duplicateLayer = useCallback(
+    (id: string) => {
+      let newId = "";
+      commit(`dup:${id}`, d => {
+        const i = d.layers.findIndex(l => l.id === id);
+        if (i === -1) return d;
+        const src = d.layers[i];
+        newId = `${src.kind}-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}`;
+        const copy = {
+          ...src,
+          id: newId,
+          name: `${src.name} copy`,
+          pos: { x: src.pos.x + 0.03, y: src.pos.y + 0.03 },
+        } as Layer;
+        const layers = [...d.layers];
+        layers.splice(i + 1, 0, copy);
+        return { ...d, layers };
+      });
+      setS(prev => (newId ? { ...prev, selectedId: newId } : prev));
+    },
+    [commit]
+  );
 
-  const reorderLayer = useCallback((id: string, dir: -1 | 1) => {
-    setS(prev => {
-      const layers = [...prev.design.layers];
-      const i = layers.findIndex(l => l.id === id);
-      const j = i + dir;
-      if (i === -1 || j < 0 || j >= layers.length) return prev;
-      [layers[i], layers[j]] = [layers[j], layers[i]];
-      return { ...prev, design: { ...prev.design, layers } };
-    });
-  }, []);
+  const reorderLayer = useCallback(
+    (id: string, dir: -1 | 1) =>
+      commit(`order:${id}:${dir}`, d => {
+        const layers = [...d.layers];
+        const i = layers.findIndex(l => l.id === id);
+        const j = i + dir;
+        if (i === -1 || j < 0 || j >= layers.length) return d;
+        [layers[i], layers[j]] = [layers[j], layers[i]];
+        return { ...d, layers };
+      }),
+    [commit]
+  );
 
   const select = useCallback((id: string | null) => setS(prev => ({ ...prev, selectedId: id })), []);
 
-  /* ---------- positions ----------
-     A drag is local by definition: it writes an override for the placement it
-     happened on and touches nothing else. Pushing a layout everywhere is an
-     explicit action, never a side effect. */
-  const moveLayer = useCallback((placementId: string, layerId: string, x: number, y: number) => {
-    setS(prev => ({
-      ...prev,
-      design: {
-        ...prev.design,
-        overrides: {
-          ...prev.design.overrides,
-          [placementId]: { ...(prev.design.overrides[placementId] ?? {}), [layerId]: { x, y } },
-        },
-      },
-    }));
-  }, []);
+  const moveLayer = useCallback(
+    (placementId: string, layerId: string, x: number, y: number) =>
+      commit(`move:${placementId}:${layerId}`, d => ({
+        ...d,
+        overrides: { ...d.overrides, [placementId]: { ...(d.overrides[placementId] ?? {}), [layerId]: { x, y } } },
+      })),
+    [commit]
+  );
 
   const ctxOf = (st: StudioState): LayoutContext => ({
     lang: st.design.lang,
@@ -363,6 +491,8 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
       return {
         ...prev,
         design: { ...prev.design, overrides: { ...prev.design.overrides, [pl.id]: next } },
+        past: [...prev.past, { design: prev.design, tag: "snapThis", at: Date.now() }].slice(-HISTORY_LIMIT),
+        future: [],
       };
     });
     say("Snapped into this placement's safe box");
@@ -379,6 +509,8 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
           layers: prev.design.layers.map(l => (next[l.id] ? { ...l, pos: next[l.id] } : l)),
           overrides: {},
         },
+        past: [...prev.past, { design: prev.design, tag: "snapMaster", at: Date.now() }].slice(-HISTORY_LIMIT),
+        future: [],
       };
     });
     say("Master layout applied to every placement");
@@ -394,6 +526,8 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
           layers: prev.design.layers.map(l => (per[l.id] ? { ...l, pos: per[l.id] } : l)),
           overrides: {},
         },
+        past: [...prev.past, { design: prev.design, tag: "applyAll", at: Date.now() }].slice(-HISTORY_LIMIT),
+        future: [],
       };
     });
     say("This position is now the default everywhere");
@@ -403,7 +537,12 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     setS(prev => {
       const overrides = { ...prev.design.overrides };
       delete overrides[prev.active];
-      return { ...prev, design: { ...prev.design, overrides } };
+      return {
+        ...prev,
+        design: { ...prev.design, overrides },
+        past: [...prev.past, { design: prev.design, tag: "resetThis", at: Date.now() }].slice(-HISTORY_LIMIT),
+        future: [],
+      };
     });
     say("Back to the shared default");
   }, [say]);
@@ -421,6 +560,8 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
       plat: PLACEMENTS[0].plat,
       selectedId: null,
       design: initialDesign(prev.kit),
+      past: [],
+      future: [],
     }));
     say("Cleared — brand kit kept");
   }, [say]);
@@ -430,11 +571,13 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     () => ({ lang: s.design.lang, logoAspect: s.logo ? s.logo.naturalHeight / s.logo.naturalWidth : 0.3 }),
     [s.design.lang, s.logo]
   );
+  const fit = fitFor(s.design, s.active);
 
   const value: Studio = {
     ...s,
     placement,
     ctx,
+    fit,
     patch,
     patchDesign,
     loadCreative,
@@ -443,6 +586,10 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     setLang,
     applyKit,
     forgetKit,
+    setFitDefault,
+    setFitHere,
+    resetFitHere,
+    applyFitEverywhere,
     addLayer,
     updateLayer,
     removeLayer,
@@ -454,6 +601,10 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     snapAllToMaster,
     applyToAll,
     resetThis,
+    undo,
+    redo,
+    canUndo: s.past.length,
+    canRedo: s.future.length,
     reset,
     say,
     kitReady,
@@ -474,7 +625,7 @@ export function useStudio(): Studio {
   return v;
 }
 
-/** Shrink an image so a logo can live in localStorage without blowing the quota. */
+/** Shrink an image so an upload can live in localStorage without blowing the quota. */
 export function shrinkImage(src: string, maxW: number): Promise<string> {
   return new Promise(resolve => {
     const im = new Image();

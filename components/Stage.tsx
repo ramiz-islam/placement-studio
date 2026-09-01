@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import { PLACEMENTS } from "@/lib/core";
-import { RATIO_LABEL, hasOverride } from "@/lib/geometry";
+import { RATIO_LABEL, fitFor, hasFitOverride, hasOverride } from "@/lib/geometry";
 import { audit } from "@/lib/audit";
 import { useStudio } from "./StudioProvider";
 import { Device } from "./Device";
@@ -50,7 +50,6 @@ export function Stage({ onGenerate }: { onGenerate: () => void }) {
     design: st.design,
     logoSrc: st.logoSrc,
     ctx: st.ctx,
-    fit: st.design.fit,
     padColor: st.padColor,
     showZones: st.zones,
     showFlags: st.flags,
@@ -105,7 +104,7 @@ export function Stage({ onGenerate }: { onGenerate: () => void }) {
   );
 }
 
-type Common = Omit<React.ComponentProps<typeof Device>, "pl" | "col" | "width">;
+type Common = Omit<React.ComponentProps<typeof Device>, "pl" | "col" | "width" | "fit">;
 
 function FocusView({
   st,
@@ -132,7 +131,14 @@ function FocusView({
 
   return (
     <div className="device-wrap">
-      <Device {...common} pl={pl} col={a.col} width={tall ? "min(300px, 40vh)" : "min(440px, 90%)"} onLayerMove={onLayerMove} />
+      <Device
+        {...common}
+        pl={pl}
+        fit={st.fit}
+        col={a.col}
+        width={tall ? "min(300px, 40vh)" : "min(440px, 90%)"}
+        onLayerMove={onLayerMove}
+      />
       <div className="device-cap">
         <div className="dc-name">
           {pl.plat} · {pl.name}
@@ -141,6 +147,38 @@ function FocusView({
           {pl.w} × {pl.h} · {RATIO_LABEL(pl.w / pl.h)} · reserved {pl.safe.t}/{pl.safe.b}/{pl.safe.l}/{pl.safe.r}
         </div>
       </div>
+      <div className="snap-row">
+        <span className="fit-group">
+          <b>Fit</b>
+          <button
+            className="mini-btn"
+            aria-pressed={st.fit === "cover"}
+            onClick={() => st.setFitHere("cover")}
+            type="button"
+          >
+            Crop
+          </button>
+          <button
+            className="mini-btn"
+            aria-pressed={st.fit === "contain"}
+            onClick={() => st.setFitHere("contain")}
+            type="button"
+          >
+            Letterbox
+          </button>
+          {hasFitOverride(st.design, pl.id) ? (
+            <>
+              <button className="link-btn" onClick={st.resetFitHere} type="button">
+                use default
+              </button>
+              <button className="link-btn" onClick={st.applyFitEverywhere} type="button">
+                make default
+              </button>
+            </>
+          ) : null}
+        </span>
+      </div>
+
       <div className="snap-row">
         <button className="btn" onClick={st.snapThis} type="button">
           Snap into this safe box
@@ -158,6 +196,14 @@ function FocusView({
         ) : null}
       </div>
       <p className="pos-note">
+        {hasFitOverride(st.design, pl.id) ? (
+          <>
+            <b style={{ color: "var(--blue-bright)" }}>
+              {st.fit === "cover" ? "Cropped" : "Letterboxed"} just for this placement
+            </b>{" "}
+            — every other channel uses {st.design.fit === "cover" ? "crop" : "letterbox"}.{" "}
+          </>
+        ) : null}
         {custom ? (
           <>
             <b style={{ color: "var(--blue-bright)" }}>Custom position</b> for {pl.plat} {pl.name} — other placements
@@ -204,7 +250,7 @@ function GridView({ st, common }: { st: ReturnType<typeof useStudio>; common: Co
             meta: st.meta!,
             design: st.design,
             logo: st.logo,
-            fit: st.design.fit,
+            fit: fitFor(st.design, pl.id),
             padColor: st.padColor,
             ver: st.ver,
           });
@@ -212,7 +258,7 @@ function GridView({ st, common }: { st: ReturnType<typeof useStudio>; common: Co
           return (
             <div key={pl.id} className={`gcard${pl.id === st.active ? " active" : ""}`}>
               <button type="button" onClick={() => st.patch({ active: pl.id, plat: pl.plat, view: "focus" })}>
-                <Device {...common} pl={pl} col={a.col} width="100%" small />
+                <Device {...common} pl={pl} fit={fitFor(st.design, pl.id)} col={a.col} width="100%" small />
                 <div className="glab">
                   <div className="glab-t">
                     <div className="glab-p">{pl.plat}</div>

@@ -1,74 +1,108 @@
-# Taking it live
+# Taking it live — GitHub + Cloudflare
 
-Everything is deploy-ready. The three things that were missing — a password gate, storage that survives a read-only filesystem, and request bodies that fit inside a serverless limit — are done. What remains needs your Vercel account, which I can't log into.
+The app is Cloudflare-ready and **verified running on Cloudflare's actual runtime**, not just configured for it: the Worker builds, boots, enforces the password gate (401 without, 200 with), and reports `driver: "r2"` from `/api/library`.
+
+What's left needs your GitHub and Cloudflare accounts, which I can't log into.
 
 ---
 
 ## Read this first
 
-This app **spends money on every generation** and holds two API keys server-side. On a public URL with no lock, anyone who finds it can burn your OpenAI budget.
+This app **spends money on every generation** and holds two API keys server-side. A deployment refuses to serve anything unless `SITE_PASSWORD` is set — a misconfigured deploy fails loudly instead of sitting open. You'll get a browser password prompt: leave the username blank, type the password.
 
-So the deployment refuses to serve anything unless `SITE_PASSWORD` is set. That's deliberate — a misconfigured deploy fails loudly instead of sitting open. You'll get a browser password prompt: leave the username blank, type the password.
+Push the repo **private**. It contains no keys (`.env.local` and `.dev.vars` are gitignored), but it does contain CarSwitch brand configuration and the placement research.
 
 ---
 
-## Deploy
+## 1. GitHub
+
+The repo already exists locally with full history on `master`. Create an empty **private** repo on GitHub called `placement-studio`, then:
 
 ```bash
 cd C:\Users\seora\placement-studio
-npx vercel login
+git remote add origin https://github.com/<your-org>/placement-studio.git
+git push -u origin master
 ```
 
-Then link and push a preview build:
+Verify nothing sensitive went up:
 
 ```bash
-npx vercel
+git ls-files | Select-String -Pattern "env|dev.vars"
 ```
 
-Answer the prompts: set up a new project, keep the detected Next.js settings, accept the defaults. It gives you a preview URL.
+That should return only `.env.local.example`.
 
-Now add the environment variables. Either in the Vercel dashboard under **Settings → Environment Variables**, or from the terminal:
+---
+
+## 2. Cloudflare
+
+Log in and create the R2 bucket the generation library uses:
 
 ```bash
-npx vercel env add SITE_PASSWORD production
-npx vercel env add OPENAI_API_KEY production
-npx vercel env add ANTHROPIC_API_KEY production
+npx wrangler login
+npx wrangler r2 bucket create placement-studio-generations
 ```
 
-Add Blob storage so the generation library persists — **Storage → Create → Blob**, then connect it to this project. Vercel injects `BLOB_READ_WRITE_TOKEN` automatically and the app switches drivers with no code change. Without it, generation still works but nothing is saved to the library.
-
-Ship it:
+Set the secrets (each prompts for the value, and none of them land in git):
 
 ```bash
-npm run deploy
+npx wrangler secret put SITE_PASSWORD
+npx wrangler secret put OPENAI_API_KEY
+npx wrangler secret put ANTHROPIC_API_KEY
 ```
 
-Redeploy after changing any environment variable — they're baked in at build time.
+Preview it locally on the real Workers runtime first — this is what I used to verify it:
+
+```bash
+npm run cf:preview
+```
+
+Then ship:
+
+```bash
+npm run cf:deploy
+```
+
+### Connecting it to GitHub for automatic deploys
+
+In the Cloudflare dashboard: **Workers & Pages → Create → Workers → Connect to Git**, pick the repo, and set:
+
+| Setting | Value |
+|---|---|
+| Build command | `npm run cf:build` |
+| Deploy command | `npx wrangler deploy` |
+| Root directory | *(leave blank)* |
+
+Add the same three secrets as environment variables in the dashboard, and bind the R2 bucket (`GENERATIONS` → `placement-studio-generations`) under the Worker's settings. After that, every push to `master` deploys.
 
 ---
 
 ## What to check once it's up
 
-1. The password prompt appears. If you instead see *"SITE_PASSWORD is not set on this deployment"*, add the variable and redeploy.
-2. Generate one image. Then open **Library** — it should be there, and the footer should say **Vercel Blob** rather than `.data/generated`.
-3. Export one placement with **Fit under platform limit** on and check the file size badge.
+1. The password prompt appears. If you instead see *"SITE_PASSWORD is not set on this deployment"*, add the secret and redeploy.
+2. Generate one image, then open **Library** — the footer should say **Cloudflare R2**.
+3. Export one placement with **Fit under platform limit** on and check the file-size badge.
 
 ---
 
-## Plan limits worth knowing
+## Platform notes
 
-| Limit | Hobby | Effect here |
-|---|---|---|
-| Function duration | 60s | `maxDuration` is set to 60. High-quality gpt-image takes 20–60s **per image**, so asking for 3–4 at once can time out. Generate 1–2 at a time, or raise `maxDuration` to 300 in `app/api/generate/route.ts` on Pro. |
-| Request body | ~4.5 MB | Ad remake downscales the reference to 1024px before posting, so this is handled. |
-| Filesystem | read-only | Why Blob storage matters. Without it `saveGeneration` logs a failure and returns the image anyway. |
+| Concern | How it's handled |
+|---|---|
+| No filesystem on Workers | The library has three storage drivers and picks itself: R2 when the `GENERATIONS` binding exists, Vercel Blob when `BLOB_READ_WRITE_TOKEN` does, otherwise `.data/generated` on disk for local dev. `node:fs` is imported dynamically so it never enters the Workers bundle. |
+| Node APIs in the SDKs | `nodejs_compat` is set in `wrangler.jsonc`. Both the OpenAI and Anthropic SDKs are fetch-based and work under it. |
+| CPU / duration limits | Image generation is a single outbound fetch, so the Worker is mostly idle while waiting. Requesting 3–4 high-quality images at once is still the slowest path — generate 1–2 at a time. |
+| Request body size | Ad remake downscales the reference image to 1024px before posting, well under any platform's body limit. |
+| Export | Runs entirely in the browser on canvas. It needs no server, no keys, and costs nothing to serve. |
 
-Everything else — preview, safe zones, drag, audit, export — runs entirely in the browser and costs nothing to serve.
+---
+
+## Vercel is still supported
+
+`npm run deploy` deploys to Vercel unchanged, using the Blob driver instead of R2. Both hosts work from the same codebase; nothing is Cloudflare-only.
 
 ---
 
 ## If you'd rather not put it on the internet
 
-It works fine as a local tool: `npm run dev` and nothing leaves your machine. That's the lowest-risk option while it's only you using it, and the only real cost of staying local is that teammates can't open it.
-
-A middle option is a Vercel preview deployment kept unlisted and password-protected, which is what the steps above produce before you run `npm run deploy`.
+It works fine as a local tool — `npm run dev`, nothing leaves your machine. That stays the lowest-risk option while it's only you using it; the only cost is that teammates can't open it.

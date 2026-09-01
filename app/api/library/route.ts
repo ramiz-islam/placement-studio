@@ -4,17 +4,18 @@ import { deleteGeneration, listGenerations, readGeneration, storageDriver } from
 export const runtime = "nodejs";
 
 /** GET /api/library            -> recent generations + which driver is storing them
- *  GET /api/library?id=gen-x   -> that generation's PNG (fs driver only) */
+ *  GET /api/library?id=gen-x   -> that generation's PNG (r2 and fs drivers) */
 export async function GET(req: Request) {
   const id = new URL(req.url).searchParams.get("id");
   if (id) {
     const png = await readGeneration(id);
     if (!png) return NextResponse.json({ error: "Not found." }, { status: 404 });
-    return new NextResponse(new Uint8Array(png), {
+    // a BlobPart keeps this valid on both the Node and Workers runtimes
+    return new NextResponse(new Blob([png], { type: "image/png" }), {
       headers: { "content-type": "image/png", "cache-control": "private, max-age=86400" },
     });
   }
-  return NextResponse.json({ entries: await listGenerations(), driver: storageDriver() });
+  return NextResponse.json({ entries: await listGenerations(), driver: await storageDriver() });
 }
 
 /** DELETE /api/library?id=gen-x */

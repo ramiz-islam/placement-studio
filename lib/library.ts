@@ -1,17 +1,18 @@
 /**
  * Generation library. Server-side only.
  *
- * Two drivers, chosen by environment rather than by config:
- *  · blob — Vercel Blob, used whenever BLOB_READ_WRITE_TOKEN exists. Required
- *           in production: serverless filesystems are read-only, so the fs
- *           driver would silently lose every generation.
+ * Three drivers, chosen by environment rather than by config, because the
+ * filesystem is only writable in one of the three places this app runs:
+ *  · r2   — Cloudflare R2, when the Worker has a GENERATIONS bucket binding.
+ *           Required on Cloudflare: Workers have no filesystem at all.
+ *  · blob — Vercel Blob, when BLOB_READ_WRITE_TOKEN exists.
  *  · fs   — .data/generated on disk. The local default; the files are the point.
  *
- * Saving never blocks a generation: a storage failure is logged and the image
- * still comes back to the browser.
+ * Every driver is imported lazily so a platform never bundles the others'
+ * dependencies, and saving never blocks a generation: a storage failure is
+ * logged and the image still comes back to the browser.
  */
 
-import { mkdir, readFile, readdir, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 export interface LibraryEntry {
@@ -31,19 +32,65 @@ export interface LibraryEntry {
 
 const ROOT = path.join(process.cwd(), ".data", "generated");
 const ID_RE = /^[a-z0-9-]{6,64}$/;
-const blobToken = () => process.env.BLOB_READ_WRITE_TOKEN;
 
-export const storageDriver = (): "blob" | "fs" => (blobToken() ? "blob" : "fs");
+type Driver = "r2" | "blob" | "fs";
+
+/** The R2 bucket binding, when running on Cloudflare. */
+interface Bucket {
+  put(key: string, value: ArrayBuffer | string, opts?: unknown): Promise<unknown>;
+  get(key: string): Promise<{ arrayBuffer(): Promise<ArrayBuffer>; text(): Promise<string> } | null>;
+  delete(keys: string | string[]): Promise<void>;
+  list(opts?: { prefix?: string; limit?: number }): Promise<{ objects: { key: string }[] }>;
+}
+
+async function r2(): Promise<Bucket | null> {
+  try {
+    const { getCloudflareContext } = await import("@opennextjs/cloudflare");
+    const env = getCloudflareContext().env as unknown as { GENERATIONS?: Bucket };
+    return env.GENERATIONS ?? null;
+  } catch {
+    return null; // not running on Cloudflare
+  }
+}
+
+export async function storageDriver(): Promise<Driver> {
+  if (await r2()) return "r2";
+  if (process.env.BLOB_READ_WRITE_TOKEN) return "blob";
+  return "fs";
+}
+
+/* -------------------------------------------------------------------- r2 */
+
+async function r2Save(bucket: Bucket, id: string, png: Buffer, entry: LibraryEntry): Promise<LibraryEntry> {
+  const full: LibraryEntry = { ...entry, url: `/api/library?id=${id}` };
+  await bucket.put(`${id}.png`, png.buffer.slice(png.byteOffset, png.byteOffset + png.byteLength) as ArrayBuffer, {
+    httpMetadata: { contentType: "image/png" },
+  });
+  await bucket.put(`${id}.json`, JSON.stringify(full), {
+    httpMetadata: { contentType: "application/json" },
+  });
+  return full;
+}
+
+async function r2List(bucket: Bucket, limit: number): Promise<LibraryEntry[]> {
+  const { objects } = await bucket.list({ limit: 1000 });
+  const out: LibraryEntry[] = [];
+  for (const o of objects.filter(x => x.key.endsWith(".json"))) {
+    try {
+      const obj = await bucket.get(o.key);
+      if (!obj) continue;
+      out.push(JSON.parse(await obj.text()) as LibraryEntry);
+    } catch {
+      /* skip an unreadable entry rather than failing the whole listing */
+    }
+  }
+  return out.sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? "")).slice(0, limit);
+}
 
 /* ------------------------------------------------------------------ blob */
 
-async function blobApi() {
-  // imported lazily so local dev never needs the package resolved at boot
-  return import("@vercel/blob");
-}
-
 async function blobSave(id: string, png: Buffer, entry: LibraryEntry): Promise<LibraryEntry> {
-  const { put } = await blobApi();
+  const { put } = await import("@vercel/blob");
   const img = await put(`generated/${id}.png`, png, {
     access: "public",
     contentType: "image/png",
@@ -59,26 +106,24 @@ async function blobSave(id: string, png: Buffer, entry: LibraryEntry): Promise<L
 }
 
 async function blobList(limit: number): Promise<LibraryEntry[]> {
-  const { list } = await blobApi();
+  const { list } = await import("@vercel/blob");
   const { blobs } = await list({ prefix: "generated/", limit: 1000 });
-  const metas = blobs.filter(b => b.pathname.endsWith(".json"));
   const out: LibraryEntry[] = [];
-  for (const b of metas) {
+  for (const b of blobs.filter(x => x.pathname.endsWith(".json"))) {
     try {
       const res = await fetch(b.url, { cache: "no-store" });
-      if (res.ok) {
-        const raw = (await res.json()) as Partial<LibraryEntry>;
-        if (raw.id && raw.url) out.push({ ...(raw as LibraryEntry), bytes: raw.bytes ?? 0 });
-      }
+      if (!res.ok) continue;
+      const raw = (await res.json()) as Partial<LibraryEntry>;
+      if (raw.id && raw.url) out.push({ ...(raw as LibraryEntry), bytes: raw.bytes ?? 0 });
     } catch {
-      /* skip an unreadable entry rather than failing the whole listing */
+      /* skip */
     }
   }
   return out.sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? "")).slice(0, limit);
 }
 
 async function blobDelete(id: string): Promise<boolean> {
-  const { del, list } = await blobApi();
+  const { del, list } = await import("@vercel/blob");
   const { blobs } = await list({ prefix: `generated/${id}.`, limit: 10 });
   if (!blobs.length) return false;
   await del(blobs.map(b => b.url));
@@ -87,7 +132,13 @@ async function blobDelete(id: string): Promise<boolean> {
 
 /* -------------------------------------------------------------------- fs */
 
+async function fsMod() {
+  // dynamic so a Workers bundle never pulls node:fs in
+  return import("node:fs/promises");
+}
+
 async function fsSave(id: string, png: Buffer, entry: LibraryEntry): Promise<LibraryEntry> {
+  const { mkdir, writeFile } = await fsMod();
   await mkdir(ROOT, { recursive: true });
   await writeFile(path.join(ROOT, `${id}.png`), png);
   await writeFile(path.join(ROOT, `${id}.json`), JSON.stringify(entry, null, 2), "utf8");
@@ -95,6 +146,7 @@ async function fsSave(id: string, png: Buffer, entry: LibraryEntry): Promise<Lib
 }
 
 async function fsList(limit: number): Promise<LibraryEntry[]> {
+  const { readFile, readdir, stat } = await fsMod();
   try {
     const files = await readdir(ROOT);
     const pngs = new Set(files.filter(x => x.endsWith(".png")).map(x => x.replace(/\.png$/, "")));
@@ -119,6 +171,7 @@ async function fsList(limit: number): Promise<LibraryEntry[]> {
 }
 
 async function fsDelete(id: string): Promise<boolean> {
+  const { unlink } = await fsMod();
   try {
     await unlink(path.join(ROOT, `${id}.png`));
     await unlink(path.join(ROOT, `${id}.json`)).catch(() => {});
@@ -143,7 +196,10 @@ export async function saveGeneration(
     ...meta,
   };
   try {
-    return storageDriver() === "blob" ? await blobSave(id, png, entry) : await fsSave(id, png, entry);
+    const bucket = await r2();
+    if (bucket) return await r2Save(bucket, id, png, entry);
+    if (process.env.BLOB_READ_WRITE_TOKEN) return await blobSave(id, png, entry);
+    return await fsSave(id, png, entry);
   } catch (err) {
     console.error("[library] save failed:", err);
     return null;
@@ -152,18 +208,28 @@ export async function saveGeneration(
 
 export async function listGenerations(limit = 60): Promise<LibraryEntry[]> {
   try {
-    return storageDriver() === "blob" ? await blobList(limit) : await fsList(limit);
+    const bucket = await r2();
+    if (bucket) return await r2List(bucket, limit);
+    if (process.env.BLOB_READ_WRITE_TOKEN) return await blobList(limit);
+    return await fsList(limit);
   } catch (err) {
     console.error("[library] list failed:", err);
     return [];
   }
 }
 
-/** fs driver only — the blob driver serves its own public URLs. */
-export async function readGeneration(id: string): Promise<Buffer | null> {
+/** Serves the PNG for the r2 and fs drivers; the blob driver has public URLs. */
+export async function readGeneration(id: string): Promise<ArrayBuffer | null> {
   if (!ID_RE.test(id)) return null; // no traversal
   try {
-    return await readFile(path.join(ROOT, `${id}.png`));
+    const bucket = await r2();
+    if (bucket) {
+      const obj = await bucket.get(`${id}.png`);
+      return obj ? await obj.arrayBuffer() : null;
+    }
+    const { readFile } = await fsMod();
+    const buf = await readFile(path.join(ROOT, `${id}.png`));
+    return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer;
   } catch {
     return null;
   }
@@ -172,7 +238,13 @@ export async function readGeneration(id: string): Promise<Buffer | null> {
 export async function deleteGeneration(id: string): Promise<boolean> {
   if (!ID_RE.test(id)) return false;
   try {
-    return storageDriver() === "blob" ? await blobDelete(id) : await fsDelete(id);
+    const bucket = await r2();
+    if (bucket) {
+      await bucket.delete([`${id}.png`, `${id}.json`]);
+      return true;
+    }
+    if (process.env.BLOB_READ_WRITE_TOKEN) return await blobDelete(id);
+    return await fsDelete(id);
   } catch (err) {
     console.error("[library] delete failed:", err);
     return false;
