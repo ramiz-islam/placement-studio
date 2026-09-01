@@ -103,6 +103,9 @@ function Studio() {
         <Toggle on={st.chrome} onClick={() => st.patch({ chrome: !st.chrome })}>
           Platform UI
         </Toggle>
+        <Toggle on={st.deviceFrame} onClick={() => st.patch({ deviceFrame: !st.deviceFrame })}>
+          Phone shell
+        </Toggle>
 
         <button className="btn lime" onClick={() => setSheet("gen")} type="button">
           Generate

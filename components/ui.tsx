@@ -141,17 +141,20 @@ export function ColorField({
   onChange: (hex: string) => void;
   swatches?: boolean;
 }) {
+  // a colour field must never take down the app because a persisted brand kit
+  // predates one of its fields
+  const v = /^#[0-9a-fA-F]{6}$/.test(value ?? "") ? value : "#000000";
   return (
     <div className="field">
       <label className="f-label">
         <span>{label}</span>
-        <b>{value}</b>
+        <b>{v}</b>
       </label>
       <div className="swatch-row">
         <span className="swatch">
           <input
             type="color"
-            value={value.toLowerCase()}
+            value={v.toLowerCase()}
             onChange={e => onChange(normHex(e.target.value))}
             aria-label={`${label} colour picker`}
           />
@@ -160,9 +163,9 @@ export function ColorField({
           type="text"
           className="hexbox"
           spellCheck={false}
-          value={value}
+          value={v}
           onChange={e => onChange(e.target.value.toUpperCase())}
-          onBlur={e => onChange(isHex(e.target.value) ? normHex(e.target.value) : value)}
+          onBlur={e => onChange(isHex(e.target.value) ? normHex(e.target.value) : v)}
           aria-label={`${label} hex code`}
         />
       </div>

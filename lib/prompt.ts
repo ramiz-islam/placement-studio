@@ -75,6 +75,12 @@ export interface ImageBrief {
   cta?: string;
   /** an existing creative is being rebuilt */
   hasReference: boolean;
+  /**
+   * Compose so one asset survives every channel, not just the target shape.
+   * On by default: a generation that only works in one placement is a wasted
+   * credit, because the same brief has to be run again for the others.
+   */
+  universal?: boolean;
 }
 
 /**
@@ -82,6 +88,18 @@ export interface ImageBrief {
  * the model as a composition constraint, which is the whole point of building
  * generation inside the preview tool rather than beside it.
  */
+/**
+ * The strictest reserved bands across EVERY placement, regardless of ratio.
+ * This is what "works on every channel" has to clear.
+ */
+export function reservedEverywhere() {
+  const bottom = Math.max(...PLACEMENTS.map(p => p.safe.b / p.h));
+  const top = Math.max(...PLACEMENTS.map(p => p.safe.t / p.h));
+  const right = Math.max(...PLACEMENTS.map(p => p.safe.r / p.w));
+  const worstPl = PLACEMENTS.reduce((x, p) => (p.safe.b / p.h > x.safe.b / x.h ? p : x));
+  return { bottom, top, right, worst: `${worstPl.plat} ${worstPl.name}` };
+}
+
 export function reservedForShape(shapeId: string) {
   const shape = SHAPES.find(s => s.id === shapeId) || SHAPES[0];
   // Explicit bands, so no placement's membership depends on float rounding.
@@ -110,9 +128,11 @@ const MARKET_CUE: Record<string, string> = {
 export function buildImagePrompt(b: ImageBrief): string {
   const type = CREATIVE_TYPES.find(t => t.id === b.typeId) || CREATIVE_TYPES[0];
   const shape = SHAPES.find(s => s.id === b.shapeId) || SHAPES[0];
-  const zone = reservedForShape(b.shapeId);
+  const universal = b.universal !== false;
+  const zone = universal ? reservedEverywhere() : reservedForShape(b.shapeId);
   const botPct = Math.round(zone.bottom * 100);
   const topPct = Math.round(zone.top * 100);
+  const rightPct = Math.round(zone.right * 100);
 
   const parts: string[] = [];
 
@@ -131,9 +151,11 @@ export function buildImagePrompt(b: ImageBrief): string {
   parts.push(MARKET_CUE[b.market] || MARKET_CUE.intl);
 
   parts.push(
-    `COMPOSITION. This asset will be cropped into feed placements that cover the edges with their own interface. Keep the bottom ${botPct}% and the top ${topPct}% of the frame visually simple — background, gradient or empty space, no part of the subject that matters. ${
-      zone.worst ? `${zone.worst} has the deepest interface furniture at ${botPct}%.` : ""
-    } Put the subject in the upper-middle of the frame with the focal point clearly inside the central area, and leave one genuinely quiet band where a headline will be placed afterwards. Do not let the subject touch the frame edges — the asset is re-cropped to other ratios.`
+    universal
+      ? `COMPOSITION — THIS IS THE HARDEST CONSTRAINT, TREAT IT AS A REQUIREMENT. One asset has to survive every social placement: 9:16 stories and reels, 4:5 and 2:3 feeds, 1:1 squares and 1.91:1 banners. That means two things. First, the entire message must sit inside the CENTRE SQUARE of the frame, because every other ratio is a crop of it — nothing that matters may live outside that square. Second, the bottom ${botPct}%, the top ${topPct}% and the right ${rightPct}% are covered by platform interface (${zone.worst} is the worst case) and must be visually simple: background, gradient, sky, road, empty wall — never the subject's face, never a product edge, never fine detail. Place the subject centred and slightly above centre, comfortably inside the safe area, not touching any frame edge, and leave one genuinely quiet band for a headline to be composited afterwards.`
+      : `COMPOSITION. This asset will be cropped into feed placements that cover the edges with their own interface. Keep the bottom ${botPct}% and the top ${topPct}% of the frame visually simple — background, gradient or empty space, no part of the subject that matters. ${
+          zone.worst ? `${zone.worst} has the deepest interface furniture at ${botPct}%.` : ""
+        } Put the subject in the upper-middle of the frame with the focal point clearly inside the central area, and leave one genuinely quiet band where a headline will be placed afterwards. Do not let the subject touch the frame edges — the asset is re-cropped to other ratios.`
   );
 
   parts.push(

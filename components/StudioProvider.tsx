@@ -40,6 +40,8 @@ export interface StudioState {
   zones: boolean;
   flags: boolean;
   chrome: boolean;
+  /** rounded phone shell, off by default — the grid should show the real frame */
+  deviceFrame: boolean;
   toast: string | null;
 }
 
@@ -77,6 +79,7 @@ const initialDesign = (kit: BrandKit): Design => ({
   cta: PRESETS.en.cta,
   headFont: kit.headFont,
   headColor: kit.headColor,
+  headColor2: kit.headColor2,
   ctaBg: kit.ctaBg,
   ctaInk: kit.ctaInk,
 });
@@ -98,6 +101,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     zones: true,
     flags: true,
     chrome: true,
+    deviceFrame: false,
     toast: null,
   }));
   // false until we know whether a kit was saved — gates the first-run sheet
@@ -131,6 +135,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
           ...prev.design,
           headFont: k.headFont,
           headColor: k.headColor,
+          headColor2: k.headColor2,
           ctaBg: k.ctaBg,
           ctaInk: k.ctaInk,
           brand: isRTL(prev.design.lang) ? prev.design.brand : k.brand,

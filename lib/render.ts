@@ -17,7 +17,7 @@
  */
 
 import { FONT, isRTL, type Design, type Fit, type Placement } from "./core";
-import { coverRect, layout, logoScrimBox, measure, rgba, safeF, scrimBox, wrapLines } from "./geometry";
+import { coverRect, layout, lineWidth, logoScrimBox, measure, rgba, safeF, scrimBox } from "./geometry";
 
 export type ExportFormat = "image/png" | "image/jpeg" | "image/webp";
 
@@ -156,10 +156,19 @@ export function renderPlacement(pl: Placement, o: RenderOpts): HTMLCanvasElement
         y += brandPx * 1.5 + headPx * 0.22;
       }
       if (d.head) {
-        g.fillStyle = d.headColor;
         g.font = `${F.weight} ${headPx}px ${F.css}`;
-        for (const line of wrapLines(d.head, F.css, F.weight, headPx, hw)) {
-          g.fillText(line, ax, y);
+        const spaceW = L.head.spaceW * o.scale;
+        // word by word so each run can take its own colour. Arabic joins only
+        // within a word, never across a space, so splitting here is safe.
+        g.textAlign = "left";
+        for (const line of L.head.lines) {
+          const scaled = line.map(t => ({ ...t, w: t.w * o.scale }));
+          let x = rtl ? ax - lineWidth(scaled, spaceW) : ax;
+          for (const t of scaled) {
+            g.fillStyle = t.accent ? d.headColor2 : d.headColor;
+            g.fillText(t.text, x, y);
+            x += t.w + spaceW;
+          }
           y += headPx * L.head.lh;
         }
       }

@@ -66,6 +66,8 @@ export interface BrandKit {
   logo: string | null;
   headFont: string;
   headColor: string;
+  /** the second headline colour, applied to [bracketed] words */
+  headColor2: string;
   ctaBg: string;
   ctaInk: string;
 }
@@ -80,6 +82,8 @@ export interface Design {
   cta: string;
   headFont: string;
   headColor: string;
+  /** second headline colour, applied to [bracketed] words */
+  headColor2: string;
   ctaBg: string;
   ctaInk: string;
   /** headline size as a percentage of frame width */
@@ -125,7 +129,7 @@ export interface CreativeMeta {
 
 export const DESIGN_DEFAULTS: Omit<
   Design,
-  "brand" | "head" | "cta" | "headFont" | "headColor" | "ctaBg" | "ctaInk"
+  "brand" | "head" | "cta" | "headFont" | "headColor" | "headColor2" | "ctaBg" | "ctaInk"
 > = {
   fit: "cover",
   lang: "en",
@@ -461,6 +465,6 @@ export const isRTL = (l: Lang): boolean => l !== "en";
 
 export const KIT_DEFAULTS: BrandKit = {
   brand:"CarSwitch", logo:null, headFont:"jakarta",
-  headColor:"#FFFFFF", ctaBg:"#BFFF00", ctaInk:"#141652"
+  headColor:"#FFFFFF", headColor2:"#BFFF00", ctaBg:"#BFFF00", ctaInk:"#141652"
 };
 export const KIT_KEY = "ps.brandkit.v1";

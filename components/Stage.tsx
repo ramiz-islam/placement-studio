@@ -56,6 +56,7 @@ export function Stage({ onGenerate }: { onGenerate: () => void }) {
     showZones: st.zones,
     showFlags: st.flags,
     showChrome: st.chrome,
+    framed: st.deviceFrame,
   };
 
   return (
@@ -189,7 +190,9 @@ function GridView({ st, common }: { st: ReturnType<typeof useStudio>; common: Co
     <>
       <div className="grid-head">
         <h2>Every placement, one creative</h2>
-        <p>{PLACEMENTS.length} placements · scored on this exact file</p>
+        <p>
+          {PLACEMENTS.length} placements · exact frames, exact chrome
+        </p>
       </div>
       <div className="grid">
         {PLACEMENTS.map(pl => {
@@ -212,6 +215,9 @@ function GridView({ st, common }: { st: ReturnType<typeof useStudio>; common: Co
                   <div className="glab-t">
                     <div className="glab-p">{pl.plat}</div>
                     <div className="glab-n">{pl.name}</div>
+                    <div className="glab-d">
+                      {pl.w} × {pl.h}
+                    </div>
                   </div>
                   <span className={`score-pill ${cls}`}>{a.score}</span>
                 </div>

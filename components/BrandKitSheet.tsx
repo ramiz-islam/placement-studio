@@ -126,6 +126,12 @@ export function BrandKitSheet({
           </select>
         </Field>
         <ColorField label="Headline colour" value={draft.headColor} onChange={hex => patch({ headColor: hex })} swatches={false} />
+        <ColorField
+          label="Second headline colour"
+          value={draft.headColor2}
+          onChange={hex => patch({ headColor2: hex })}
+          swatches={false}
+        />
         <ColorField label="CTA background" value={draft.ctaBg} onChange={hex => patch({ ctaBg: hex })} swatches={false} />
         <ColorField label="CTA text" value={draft.ctaInk} onChange={hex => patch({ ctaInk: hex })} swatches={false} />
       </div>

@@ -11,8 +11,9 @@
  */
 
 import { useEffect, useState } from "react";
-import { CREATIVE_TYPES, MARKETS, SHAPES, isRTL, type Lang } from "@/lib/core";
-import { reservedForShape } from "@/lib/prompt";
+import { CREATIVE_TYPES, MARKETS, PLACEMENTS, SHAPES, isRTL, type Lang } from "@/lib/core";
+import { audit } from "@/lib/audit";
+import { reservedEverywhere, reservedForShape } from "@/lib/prompt";
 import { shrinkImage, useStudio } from "./StudioProvider";
 import { Field, MiniBtn, Sheet, Spinner } from "./ui";
 
@@ -24,6 +25,13 @@ interface GenResult {
   bytes: number;
   savedToLibrary: boolean;
 }
+/** how a generation actually scored across the whole placement set */
+interface Verdict {
+  median: number;
+  worst: number;
+  worstName: string;
+  clears: number;
+}
 interface CopyVariant {
   headline: string;
   cta: string;
@@ -34,6 +42,12 @@ interface LibEntry {
   brief: string;
   createdAt: string;
 }
+
+const hashId = (str: string) => {
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i++) h = (h ^ str.charCodeAt(i)) * 16777619;
+  return h | 0;
+};
 
 export function GenerateSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
   const st = useStudio();
@@ -48,6 +62,8 @@ export function GenerateSheet({ open, onClose }: { open: boolean; onClose: () =>
   const [quality, setQuality] = useState<"low" | "medium" | "high">("high");
   const [includeText, setIncludeText] = useState(false);
   const [useReference, setUseReference] = useState(false);
+  const [universal, setUniversal] = useState(true);
+  const [verdicts, setVerdicts] = useState<Record<string, Verdict>>({});
 
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -63,7 +79,7 @@ export function GenerateSheet({ open, onClose }: { open: boolean; onClose: () =>
   const [copyErr, setCopyErr] = useState<string | null>(null);
 
   const shape = SHAPES.find(s => s.id === shapeId)!;
-  const zone = reservedForShape(shapeId);
+  const zone = universal ? reservedEverywhere() : reservedForShape(shapeId);
   const type = CREATIVE_TYPES.find(t => t.id === typeId)!;
   const isRemake = typeId === "remake";
 
@@ -107,12 +123,15 @@ export function GenerateSheet({ open, onClose }: { open: boolean; onClose: () =>
           reference,
           count,
           quality,
+          universal,
         }),
       });
       const j = await res.json();
       if (!res.ok) throw new Error(j.error ?? "Generation failed.");
       setResults(j.results ?? []);
       setPrompt(j.prompt ?? null);
+      setVerdicts({});
+      scoreAll(j.results ?? []);
       const saved = (j.results ?? []).every((x: GenResult) => x.savedToLibrary);
       st.say(
         `${j.results.length} ${j.results.length === 1 ? "image" : "images"} generated` +
@@ -122,6 +141,49 @@ export function GenerateSheet({ open, onClose }: { open: boolean; onClose: () =>
       setErr(e instanceof Error ? e.message : "Generation failed.");
     } finally {
       setBusy(false);
+    }
+  }
+
+  /**
+   * Score the generation against all placements right here, before any more
+   * credits get spent. A result that only clears a handful is worth re-rolling
+   * with a tighter brief rather than carrying into the studio.
+   */
+  async function scoreAll(list: GenResult[]) {
+    for (const r of list) {
+      const img = new Image();
+      const ok = await new Promise<boolean>(res => {
+        img.onload = () => res(true);
+        img.onerror = () => res(false);
+        img.src = r.dataUrl;
+      });
+      if (!ok) continue;
+      // a ver nobody else uses, so this never pollutes the studio analysis cache
+      const ver = -Math.abs(hashId(r.id));
+      const scores = PLACEMENTS.map(pl => ({
+        pl,
+        score: audit({
+          pl,
+          img,
+          meta: { name: r.id, bytes: r.bytes, w: r.width, h: r.height },
+          design: { ...d, copyOn: false },
+          logo: null,
+          fit: "cover",
+          padColor: "#07080E",
+          ver,
+        }).score,
+      }));
+      const sorted = [...scores].sort((a, b) => a.score - b.score);
+      const nums = scores.map(x => x.score).sort((a, b) => a - b);
+      setVerdicts(prev => ({
+        ...prev,
+        [r.id]: {
+          median: nums[Math.floor(nums.length / 2)],
+          worst: sorted[0].score,
+          worstName: sorted[0].pl.plat + " " + sorted[0].pl.name,
+          clears: scores.filter(x => x.score >= 65).length,
+        },
+      }));
     }
   }
 
@@ -265,6 +327,9 @@ export function GenerateSheet({ open, onClose }: { open: boolean; onClose: () =>
           </div>
 
           <div className="row">
+            <MiniBtn on={universal} onClick={() => setUniversal(v => !v)}>
+              Works on every channel
+            </MiniBtn>
             <MiniBtn on={includeText} onClick={() => setIncludeText(v => !v)}>
               Render text into the image
             </MiniBtn>
@@ -282,8 +347,21 @@ export function GenerateSheet({ open, onClose }: { open: boolean; onClose: () =>
           ) : (
             <p className="hint">
               Generating <b>without text</b>. The model composes the picture; your headline, CTA and logo stay editable
-              layers. It is told to keep the bottom <b>{Math.round(zone.bottom * 100)}%</b> and top{" "}
-              <b>{Math.round(zone.top * 100)}%</b> visually simple, because that is what {zone.worst} covers.
+              layers.{" "}
+              {universal ? (
+                <>
+                  <b>Works on every channel</b> is on: the whole message is forced into the centre square, and the
+                  bottom <b>{Math.round(zone.bottom * 100)}%</b>, top <b>{Math.round(zone.top * 100)}%</b> and right{" "}
+                  <b>{Math.round(zone.right * 100)}%</b> are kept simple — the worst case across all{" "}
+                  {PLACEMENTS.length} placements ({zone.worst}). One credit, every placement.
+                </>
+              ) : (
+                <>
+                  Constrained to the <b>{shape.label.toLowerCase()}</b> group only — bottom{" "}
+                  <b>{Math.round(zone.bottom * 100)}%</b>, top <b>{Math.round(zone.top * 100)}%</b>. Sharper art
+                  direction, but you will need a separate generation for other ratios.
+                </>
+              )}
             </p>
           )}
 
@@ -305,9 +383,28 @@ export function GenerateSheet({ open, onClose }: { open: boolean; onClose: () =>
                     <img src={r.dataUrl} alt="Generated creative" />
                   </div>
                   <div className="ex-name">
-                    {r.width} × {r.height} · {r.id}
-                    {r.savedToLibrary ? " · saved" : " · not saved"}
+                    {r.width} × {r.height}
+                    {r.savedToLibrary ? " · saved to library" : " · not saved"}
                   </div>
+                  {verdicts[r.id] ? (
+                    <div
+                      className={
+                        "verdict " +
+                        (verdicts[r.id].clears >= 18 ? "good" : verdicts[r.id].clears >= 10 ? "mixed" : "poor")
+                      }
+                    >
+                      <b>
+                        Clears {verdicts[r.id].clears} of {PLACEMENTS.length} placements
+                      </b>
+                      <span>
+                        median {verdicts[r.id].median} · worst {verdicts[r.id].worst} on {verdicts[r.id].worstName}
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="verdict">
+                      <span>scoring across {PLACEMENTS.length} placements…</span>
+                    </div>
+                  )}
                   <button className="btn primary" onClick={() => use(r)} type="button">
                     Use this creative
                   </button>

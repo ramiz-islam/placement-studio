@@ -18,6 +18,7 @@ export const maxDuration = 60;
 interface Body extends ImageBrief {
   count?: number;
   quality?: "low" | "medium" | "high";
+  universal?: boolean;
   /** data URL of an existing creative, for Ad remake */
   reference?: string | null;
 }

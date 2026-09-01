@@ -2,7 +2,7 @@
 
 import { useRef } from "react";
 import { FONTS, PRESETS, isRTL, type Lang } from "@/lib/core";
-import { RATIO_LABEL } from "@/lib/geometry";
+import { RATIO_LABEL, plainText } from "@/lib/geometry";
 import { shrinkImage, useStudio } from "./StudioProvider";
 import { ColorField, Field, MiniBtn } from "./ui";
 import { sample } from "./Stage";
@@ -133,8 +133,11 @@ export function LeftRail({ onGenerate }: { onGenerate: () => void }) {
             <Field label="Brand line" hint={`${d.brand.length} ch`}>
               <input type="text" value={d.brand} dir={rtl ? "rtl" : "ltr"} onChange={e => st.patchDesign({ brand: e.target.value })} />
             </Field>
-            <Field label="Headline" hint={`${d.head.length} ch`}>
+            <Field label="Headline" hint={`${plainText(d.head).length} ch`}>
               <input type="text" value={d.head} dir={rtl ? "rtl" : "ltr"} onChange={e => st.patchDesign({ head: e.target.value })} />
+              <p className="hint">
+                Wrap words in <b>[square brackets]</b> to give them the second colour — <i>Sell your [car] now</i>.
+              </p>
             </Field>
             <Field label="Call to action" hint={`${d.cta.length} ch`}>
               <input type="text" value={d.cta} dir={rtl ? "rtl" : "ltr"} onChange={e => st.patchDesign({ cta: e.target.value })} />
@@ -206,6 +209,11 @@ export function LeftRail({ onGenerate }: { onGenerate: () => void }) {
             </Field>
 
             <ColorField label="Headline colour" value={d.headColor} onChange={hex => st.patchDesign({ headColor: hex })} />
+            <ColorField
+              label="Second headline colour"
+              value={d.headColor2}
+              onChange={hex => st.patchDesign({ headColor2: hex })}
+            />
             <ColorField label="CTA background" value={d.ctaBg} onChange={hex => st.patchDesign({ ctaBg: hex })} />
             <ColorField label="CTA text" value={d.ctaInk} onChange={hex => st.patchDesign({ ctaInk: hex })} />
 

@@ -31,6 +31,8 @@ export interface DeviceProps {
   showChrome: boolean;
   /** grid cards are not draggable */
   small?: boolean;
+  /** draw the rounded phone shell; off means the exact ad frame */
+  framed?: boolean;
   /** placementId is passed back so the move is stored against this frame only */
   onLayerMove?: (placementId: string, key: LayerKey, x: number, y: number) => void;
 }
@@ -50,6 +52,7 @@ export function Device(props: DeviceProps) {
     showFlags,
     showChrome,
     small,
+    framed,
     onLayerMove,
   } = props;
 
@@ -116,7 +119,7 @@ export function Device(props: DeviceProps) {
   return (
     <div
       ref={deviceRef}
-      className={`device${small ? " grid-card" : " dragmode"}`}
+      className={`device${small ? " grid-card" : " dragmode"}${framed ? " framed" : ""}`}
       style={{ width, aspectRatio: `${pl.w}/${pl.h}` }}
     >
       <div className={`media fit-${fit}`} style={fit === "contain" ? { background: padColor } : undefined}>
@@ -193,7 +196,18 @@ export function Device(props: DeviceProps) {
                 lineHeight: L.head.lh,
               }}
             >
-              {d.head}
+              {/* one node per computed line, so the browser cannot re-wrap it
+                  somewhere the exporter would not */}
+              {L.head.lines.map((line, i) => (
+                <span className="ln" key={i}>
+                  {line.map((t, j) => (
+                    <span key={j} style={t.accent ? { color: d.headColor2 } : undefined}>
+                      {t.text}
+                      {j < line.length - 1 ? " " : ""}
+                    </span>
+                  ))}
+                </span>
+              ))}
             </p>
           ) : null}
         </div>

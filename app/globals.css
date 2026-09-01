@@ -441,3 +441,21 @@ textarea[dir=rtl]{text-align:right}
 .ex-meta .over{color:var(--coral-soft)}
 .ex-flag{font-size:11px;color:#FFD5D4;background:var(--coral-ghost);border:1px solid #5A2A2C;border-radius:var(--r-s);padding:6px 8px;line-height:1.4}
 .lib-brief{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+
+/* post-generation verdict */
+.verdict{display:flex;flex-direction:column;gap:2px;font-size:11px;line-height:1.4;padding:7px 9px;border-radius:var(--r-s);background:var(--ink-750);border:1px solid var(--line);color:var(--muted)}
+.verdict b{font-size:11.5px;color:var(--text-dim)}
+.verdict.good{background:var(--lime-ghost);border-color:#4A5C10}
+.verdict.good b{color:var(--lime)}
+.verdict.mixed{background:var(--amber-ghost);border-color:#5C4413}
+.verdict.mixed b{color:var(--amber)}
+.verdict.poor{background:var(--coral-ghost);border-color:#5A2A2C}
+.verdict.poor b{color:var(--coral-soft)}
+
+/* headline lines are pre-wrapped by layout(), so they must not re-wrap */
+.lay-title .ln{display:block;white-space:nowrap}
+/* the grid shows the real ad frame; the rounded phone shell is opt-in */
+.device,.device.grid-card{border-radius:0}
+.device.framed{border-radius:calc(3.2cqw + 6px)}
+.device.grid-card.framed{border-radius:calc(3.6cqw + 4px)}
+.glab-d{font-family:var(--f-mono);font-size:10px;color:var(--muted-deep);margin-top:1px}

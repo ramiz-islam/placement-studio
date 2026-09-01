@@ -123,6 +123,70 @@ export function wrapLines(
   return lines;
 }
 
+/* ---------- coloured runs ----------
+   The headline can carry a second colour: anything inside [square brackets]
+   takes the accent. Wrapping is computed here rather than left to the browser,
+   so the preview and the exported file break lines in exactly the same place. */
+
+export interface Run {
+  text: string;
+  accent: boolean;
+}
+export interface Token {
+  text: string;
+  accent: boolean;
+  w: number;
+}
+
+export function parseRuns(src: string): Run[] {
+  const out: Run[] = [];
+  const re = /\[([^\]]*)\]/g;
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(src))) {
+    if (m.index > last) out.push({ text: src.slice(last, m.index), accent: false });
+    if (m[1]) out.push({ text: m[1], accent: true });
+    last = m.index + m[0].length;
+  }
+  if (last < src.length) out.push({ text: src.slice(last), accent: false });
+  return out.filter(r => r.text.length);
+}
+
+/** The headline with its markup stripped — what a character count should show. */
+export const plainText = (src: string) => parseRuns(src).map(r => r.text).join("");
+
+export function tokenize(runs: Run[], fontCss: string, weight: number, sizePx: number): Token[] {
+  const out: Token[] = [];
+  for (const r of runs) {
+    for (const word of r.text.split(/\s+/).filter(Boolean)) {
+      out.push({ text: word, accent: r.accent, w: measure(word, fontCss, weight, sizePx) });
+    }
+  }
+  return out;
+}
+
+export function wrapTokens(tokens: Token[], spaceW: number, maxPx: number): Token[][] {
+  const lines: Token[][] = [];
+  let line: Token[] = [];
+  let width = 0;
+  for (const t of tokens) {
+    const add = line.length ? spaceW + t.w : t.w;
+    if (width + add > maxPx && line.length) {
+      lines.push(line);
+      line = [t];
+      width = t.w;
+    } else {
+      line.push(t);
+      width += add;
+    }
+  }
+  if (line.length) lines.push(line);
+  return lines;
+}
+
+export const lineWidth = (line: Token[], spaceW: number) =>
+  line.reduce((a, t) => a + t.w, 0) + spaceW * Math.max(0, line.length - 1);
+
 /* ---------- layer boxes ---------- */
 
 export interface Box {
@@ -134,7 +198,8 @@ export interface Box {
 
 export interface LayoutResult {
   head: Box & {
-    lines: string[];
+    lines: Token[][];
+    spaceW: number;
     headPx: number;
     brandPx: number;
     lh: number;
@@ -161,7 +226,8 @@ export function layout(pl: Placement, d: Design, logoAspect = 0.3): LayoutResult
   const brandPx = (W * d.brandSize) / 100;
   const ctaPx = (W * d.ctaSize) / 100;
 
-  const lines = wrapLines(d.head, F.css, F.weight, headPx, blockPx);
+  const spaceW = measure(" ", F.css, F.weight, headPx);
+  const lines = wrapTokens(tokenize(parseRuns(d.head), F.css, F.weight, headPx), spaceW, blockPx);
   const brandH = d.brand ? brandPx * 1.5 : 0;
   const gap = d.brand ? headPx * 0.22 : 0;
   const headH = lines.length * headPx * lh;
@@ -175,6 +241,7 @@ export function layout(pl: Placement, d: Design, logoAspect = 0.3): LayoutResult
       w: d.blockW / 100,
       h: (brandH + gap + headH) / H,
       lines,
+      spaceW,
       headPx,
       brandPx,
       lh,
