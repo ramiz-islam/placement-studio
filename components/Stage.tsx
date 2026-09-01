@@ -138,6 +138,7 @@ function FocusView({
         col={a.col}
         width={tall ? "min(300px, 40vh)" : "min(440px, 90%)"}
         onLayerMove={onLayerMove}
+        onLayerResize={st.resizeLayer}
       />
       <div className="device-cap">
         <div className="dc-name">
@@ -227,7 +228,7 @@ function FocusView({
           <i className="sw hit" />
           Busy artwork in a reserved band
         </span>
-        <span>Drag the headline, CTA and logo directly on the frame</span>
+        <span>Drag any layer on the frame · drag its edge handles to resize · layers may bleed off the edge</span>
       </div>
     </div>
   );

@@ -10,9 +10,10 @@
 
 import { useRef } from "react";
 import type { Design, Placement } from "@/lib/core";
-import { ICON, type Fill } from "@/lib/layers";
+import { ICON, type Fill, type Layer } from "@/lib/layers";
 import {
   clamp,
+  clampPos,
   intrusion,
   placeAll,
   plateBox,
@@ -26,6 +27,44 @@ import type { Collision } from "@/lib/analysis";
 import { Chrome } from "./Chrome";
 
 const pc = (n: number) => `${(n * 100).toFixed(3)}%`;
+
+/**
+ * What an edge handle should change, per layer kind. Every layer is anchored
+ * top-left, so handles grow right and down from where the layer already sits.
+ */
+type Dim = "blockW" | "w" | "h" | "size";
+interface ResizeSpec {
+  /** right edge */
+  width?: Dim;
+  /** bottom edge */
+  height?: Dim;
+  /** the corner scales width proportionally rather than freely */
+  proportional?: boolean;
+}
+
+function resizeSpec(l: Layer): ResizeSpec {
+  switch (l.kind) {
+    case "text":
+      // right edge rewraps the block; bottom edge scales the type
+      return { width: "blockW", height: "size" };
+    case "cta":
+      return { width: "size", height: "size" };
+    case "logo":
+    case "icon":
+      return { width: "w", proportional: true };
+    case "shape":
+      return l.shape === "band" ? { height: "h" } : { width: "w", height: "h" };
+  }
+}
+
+const DIM_RANGE: Record<Dim, [number, number]> = {
+  // a shape may exceed the frame — bleeding off the edge is the point
+  blockW: [8, 100],
+  w: [1, 220],
+  h: [0.2, 220],
+  size: [0.5, 30],
+};
+
 
 /** CSS for a solid colour or a linear gradient. */
 const css = (f: Fill) =>
@@ -53,6 +92,8 @@ export interface DeviceProps {
   selectedId?: string | null;
   onSelect?: (layerId: string) => void;
   onLayerMove?: (placementId: string, layerId: string, x: number, y: number) => void;
+  /** live resize; commits through the same history path as everything else */
+  onLayerResize?: (layerId: string, patch: Partial<Layer>) => void;
 }
 
 export function Device(props: DeviceProps) {
@@ -74,6 +115,7 @@ export function Device(props: DeviceProps) {
     selectedId,
     onSelect,
     onLayerMove,
+    onLayerResize,
   } = props;
 
   const deviceRef = useRef<HTMLDivElement>(null);
@@ -101,10 +143,9 @@ export function Device(props: DeviceProps) {
     read.className = "drag-readout";
     device.appendChild(read);
 
-    const at = (e: PointerEvent) => ({
-      x: clamp(start.x + (e.clientX - start.px) / rect.width, -0.05, 0.98),
-      y: clamp(start.y + (e.clientY - start.py) / rect.height, -0.05, 0.98),
-    });
+    const box = { w: el.offsetWidth / rect.width, h: el.offsetHeight / rect.height };
+    const at = (e: PointerEvent) =>
+      clampPos(box, start.x + (e.clientX - start.px) / rect.width, start.y + (e.clientY - start.py) / rect.height);
 
     const move = (e: PointerEvent) => {
       const { x, y } = at(e);
@@ -113,11 +154,7 @@ export function Device(props: DeviceProps) {
       read.style.left = pc(Math.max(0, x));
       read.style.top = pc(Math.max(0, y - 0.045));
       read.textContent = `${Math.round(x * pl.w)}, ${Math.round(y * pl.h)} px`;
-      el.classList.toggle(
-        "bad-zone",
-        !isBand &&
-          intrusion(pl, { x, y, w: el.offsetWidth / rect.width, h: el.offsetHeight / rect.height }).worst > 4
-      );
+      el.classList.toggle("bad-zone", !isBand && intrusion(pl, { x, y, ...box }).worst > 4);
     };
     const up = (e: PointerEvent) => {
       el.releasePointerCapture(ev.pointerId);
@@ -130,6 +167,95 @@ export function Device(props: DeviceProps) {
     };
     el.addEventListener("pointermove", move);
     el.addEventListener("pointerup", up);
+  }
+
+
+  /**
+   * Edge and corner handles. The property changes live so text rewraps and the
+   * audit updates while you drag; the store coalesces the stream into one undo
+   * step.
+   */
+  function startResize(layer: Layer, edge: "e" | "s" | "se", ev: React.PointerEvent<HTMLSpanElement>) {
+    if (small || !onLayerResize) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    const device = deviceRef.current;
+    if (!device) return;
+    const rect = device.getBoundingClientRect();
+    const spec = resizeSpec(layer);
+    const host = (ev.currentTarget.parentElement as HTMLElement) ?? null;
+    const startH = host ? host.offsetHeight : 1;
+    const startPx = ev.clientX;
+    const startPy = ev.clientY;
+    const startVals: Record<string, number> = {
+      blockW: layer.kind === "text" ? layer.blockW : 0,
+      w: layer.kind === "shape" || layer.kind === "logo" || layer.kind === "icon" ? layer.w : 0,
+      h: layer.kind === "shape" ? layer.h : 0,
+      size: layer.kind === "text" || layer.kind === "cta" ? layer.size : 0,
+    };
+    ev.currentTarget.setPointerCapture(ev.pointerId);
+
+    const apply = (e: PointerEvent) => {
+      const dx = e.clientX - startPx;
+      const dy = e.clientY - startPy;
+      const patch: Record<string, number> = {};
+
+      const wantWidth = edge === "e" || edge === "se";
+      const wantHeight = edge === "s" || edge === "se";
+
+      if (wantWidth && spec.width) {
+        const dim = spec.width;
+        const next =
+          dim === "size"
+            ? startVals.size * (1 + dx / Math.max(40, rect.width * 0.25))
+            : startVals[dim] + (dx / rect.width) * 100;
+        patch[dim] = clamp(next, DIM_RANGE[dim][0], DIM_RANGE[dim][1]);
+      }
+      if (wantHeight && spec.height) {
+        const dim = spec.height;
+        const next =
+          dim === "size"
+            ? startVals.size * (1 + dy / Math.max(20, startH))
+            : startVals[dim] + (dy / rect.height) * 100;
+        patch[dim] = clamp(next, DIM_RANGE[dim][0], DIM_RANGE[dim][1]);
+      }
+      if (Object.keys(patch).length) onLayerResize!(layer.id, patch as Partial<Layer>);
+    };
+
+    const move = (e: PointerEvent) => apply(e);
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  }
+
+  /** Handles for the selected layer, sized in cqw so they hold at any preview scale. */
+  function handles(l: Layer) {
+    if (small || selectedId !== l.id || !onLayerResize) return null;
+    const spec = resizeSpec(l);
+    return (
+      <>
+        {spec.width ? (
+          <span
+            className="rh rh-e"
+            title={spec.proportional ? "Drag to scale" : "Drag to set width"}
+            onPointerDown={e => startResize(l, "e", e)}
+          />
+        ) : null}
+        {spec.height ? (
+          <span
+            className="rh rh-s"
+            title={spec.height === "size" ? "Drag to scale the type" : "Drag to set height"}
+            onPointerDown={e => startResize(l, "s", e)}
+          />
+        ) : null}
+        {spec.width && spec.height ? (
+          <span className="rh rh-se" title="Drag to resize" onPointerDown={e => startResize(l, "se", e)} />
+        ) : null}
+      </>
+    );
   }
 
   const safeW = Math.round(pl.w * (1 - f.l - f.r));
@@ -158,18 +284,30 @@ export function Device(props: DeviceProps) {
               height: pc(p.box.h),
               background: l.src ? undefined : css(l.fill),
               borderRadius: l.shape === "ellipse" ? "50%" : `${l.radius}%`,
-              clipPath: clip,
-              overflow: "hidden",
+              clipPath: l.src ? undefined : clip,
             }}
           >
             {l.src ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={l.src}
-                alt={l.name}
-                style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
-              />
+              // the clip lives on this wrapper, not the layer, so the resize
+              // handles sitting outside the box are still grabbable
+              <span
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  overflow: "hidden",
+                  borderRadius: l.shape === "ellipse" ? "50%" : `${l.radius}%`,
+                  clipPath: clip,
+                }}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={l.src}
+                  alt={l.name}
+                  style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                />
+              </span>
             ) : null}
+            {handles(l)}
           </div>
         );
       }
@@ -202,6 +340,7 @@ export function Device(props: DeviceProps) {
                 <path d={ICON(l.icon).d} />
               </svg>
             )}
+            {handles(l)}
           </div>
         );
 
@@ -244,6 +383,7 @@ export function Device(props: DeviceProps) {
             ) : null}
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={logoSrc} alt="Brand logo" />
+            {handles(l)}
           </div>
         );
       }
@@ -268,6 +408,7 @@ export function Device(props: DeviceProps) {
             }}
           >
             {l.text}
+            {handles(l)}
           </div>
         );
       }
@@ -317,6 +458,7 @@ export function Device(props: DeviceProps) {
                 ))}
               </span>
             ))}
+            {handles(l)}
           </div>
         );
       }

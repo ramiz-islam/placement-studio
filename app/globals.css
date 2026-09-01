@@ -520,3 +520,22 @@ textarea[dir=rtl]{text-align:right}
 /* history buttons sit in a seg but must look disabled properly */
 .seg button:disabled{opacity:.35;cursor:not-allowed}
 .seg button:disabled:hover{color:var(--muted)}
+
+/* ============================================================
+   RESIZE HANDLES
+   Sized in cqw so they hold their proportions at any preview scale,
+   with a generous invisible hit area around a small visible dot.
+   ============================================================ */
+.rh{
+  position:absolute;z-index:20;background:var(--blue-bright);border:.4cqw solid #fff;
+  border-radius:50%;width:3.4cqw;height:3.4cqw;box-shadow:0 .3cqw 1cqw rgba(0,0,0,.5);
+  touch-action:none;
+}
+.rh::after{content:"";position:absolute;inset:-2.6cqw}
+.rh-e{right:-1.7cqw;top:50%;margin-top:-1.7cqw;cursor:ew-resize}
+.rh-s{bottom:-1.7cqw;left:50%;margin-left:-1.7cqw;cursor:ns-resize}
+.rh-se{right:-1.7cqw;bottom:-1.7cqw;cursor:nwse-resize}
+.rh:hover{background:#fff;border-color:var(--blue-bright)}
+/* text layers have no intrinsic box, so anchor the bottom handle to the content */
+.lay-text{position:absolute}
+.lay-cta .rh-e,.lay-cta .rh-se{right:-1.7cqw}

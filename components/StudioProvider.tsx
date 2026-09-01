@@ -98,6 +98,10 @@ export interface Studio extends StudioState {
   removeLayer: (id: string) => void;
   duplicateLayer: (id: string) => void;
   reorderLayer: (id: string, dir: -1 | 1) => void;
+  toFront: (id: string) => void;
+  toBack: (id: string) => void;
+  /** live resize from an edge handle — coalesced into one undo step */
+  resizeLayer: (id: string, patch: Partial<Layer>) => void;
   select: (id: string | null) => void;
   moveLayer: (placementId: string, layerId: string, x: number, y: number) => void;
   snapThis: () => void;
@@ -392,10 +396,20 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
                     ? bandLayer()
                     : shapeLayer();
         madeId = made.id;
+
+        // A shape or band is background furniture: dropping it on top would
+        // cover the copy you just wrote, so it goes behind the first text or
+        // button layer instead of at the front.
+        const layers = [...prev.design.layers];
+        const behind = made.kind === "shape";
+        const at = behind ? layers.findIndex(l => l.kind === "text" || l.kind === "cta") : -1;
+        if (behind && at !== -1) layers.splice(at, 0, made);
+        else layers.push(made);
+
         return {
           ...prev,
           selectedId: made.id,
-          design: { ...prev.design, layers: [...prev.design.layers, made] },
+          design: { ...prev.design, layers },
           past: [...prev.past, { design: prev.design, tag: `add:${madeId}`, at: Date.now() }].slice(-HISTORY_LIMIT),
           future: [],
         };
@@ -465,6 +479,36 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
         [layers[i], layers[j]] = [layers[j], layers[i]];
         return { ...d, layers };
       }),
+    [commit]
+  );
+
+  const toFront = useCallback(
+    (id: string) =>
+      commit(`front:${id}`, d => {
+        const l = d.layers.find(x => x.id === id);
+        if (!l) return d;
+        return { ...d, layers: [...d.layers.filter(x => x.id !== id), l] };
+      }),
+    [commit]
+  );
+
+  const toBack = useCallback(
+    (id: string) =>
+      commit(`back:${id}`, d => {
+        const l = d.layers.find(x => x.id === id);
+        if (!l) return d;
+        return { ...d, layers: [l, ...d.layers.filter(x => x.id !== id)] };
+      }),
+    [commit]
+  );
+
+  /** One tag for the whole gesture, so a resize drag is a single undo step. */
+  const resizeLayer = useCallback(
+    (id: string, p: Partial<Layer>) =>
+      commit(`resize:${id}`, d => ({
+        ...d,
+        layers: d.layers.map(l => (l.id === id ? ({ ...l, ...p } as Layer) : l)),
+      })),
     [commit]
   );
 
@@ -595,6 +639,9 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     removeLayer,
     duplicateLayer,
     reorderLayer,
+    toFront,
+    toBack,
+    resizeLayer,
     select,
     moveLayer,
     snapThis,

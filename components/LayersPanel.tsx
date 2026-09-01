@@ -162,6 +162,11 @@ function Inspector({ layer }: { layer: Layer }) {
         </div>
       </div>
 
+      <div className="row" style={{ marginBottom: 10 }}>
+        <MiniBtn onClick={() => st.toBack(layer.id)}>Send behind everything</MiniBtn>
+        <MiniBtn onClick={() => st.toFront(layer.id)}>Bring to front</MiniBtn>
+      </div>
+
       <Field label="Layer name">
         <input type="text" value={layer.name} onChange={e => set({ name: e.target.value } as Partial<Layer>)} />
       </Field>
