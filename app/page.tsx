@@ -25,6 +25,8 @@ function Studio() {
   const st = useStudio();
   const [sheet, setSheet] = useState<null | "export" | "kit" | "gen" | "lib">(null);
   const [firstRun, setFirstRun] = useState(false);
+  const [menu, setMenu] = useState<null | "view" | "more">(null);
+  const shownCount = [st.zones, st.flags, st.chrome, st.deviceFrame].filter(Boolean).length;
 
   // Ask for the brand kit once, then never again.
   useEffect(() => {
@@ -41,12 +43,23 @@ function Studio() {
     }
   }, [st.kitReady]);
 
+  // any click outside a menu closes it
+  useEffect(() => {
+    if (!menu) return;
+    const away = (e: MouseEvent) => {
+      if (!(e.target instanceof Element) || !e.target.closest(".menu-wrap")) setMenu(null);
+    };
+    window.addEventListener("click", away);
+    return () => window.removeEventListener("click", away);
+  }, [menu]);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const el = document.activeElement;
       const inField = el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement;
       if (e.key === "Escape") {
         setSheet(null);
+        setMenu(null);
         st.select(null);
       }
       // arrow keys nudge the selection: the dependable way to move a layer that
@@ -139,18 +152,34 @@ function Studio() {
 
         <div className="bar-spacer" />
 
-        <Toggle variant="safe" on={st.zones} onClick={() => st.patch({ zones: !st.zones })}>
-          Safe zones
-        </Toggle>
-        <Toggle variant="flag" on={st.flags} onClick={() => st.patch({ flags: !st.flags })}>
-          Collisions
-        </Toggle>
-        <Toggle on={st.chrome} onClick={() => st.patch({ chrome: !st.chrome })}>
-          Platform UI
-        </Toggle>
-        <Toggle on={st.deviceFrame} onClick={() => st.patch({ deviceFrame: !st.deviceFrame })}>
-          Phone shell
-        </Toggle>
+        {/* four view toggles collapsed behind one control, with a count so their
+            state is still legible at a glance */}
+        <div className="menu-wrap">
+          <button
+            className="btn"
+            aria-expanded={menu === "view"}
+            onClick={() => setMenu(menu === "view" ? null : "view")}
+            type="button"
+          >
+            Guides {shownCount}/4
+          </button>
+          {menu === "view" ? (
+            <div className="menu">
+              <Toggle variant="safe" on={st.zones} onClick={() => st.patch({ zones: !st.zones })}>
+                Safe zones
+              </Toggle>
+              <Toggle variant="flag" on={st.flags} onClick={() => st.patch({ flags: !st.flags })}>
+                Collisions
+              </Toggle>
+              <Toggle on={st.chrome} onClick={() => st.patch({ chrome: !st.chrome })}>
+                Platform UI
+              </Toggle>
+              <Toggle on={st.deviceFrame} onClick={() => st.patch({ deviceFrame: !st.deviceFrame })}>
+                Phone shell
+              </Toggle>
+            </div>
+          ) : null}
+        </div>
 
         <button className="btn lime" onClick={() => setSheet("gen")} type="button">
           Generate
@@ -158,15 +187,45 @@ function Studio() {
         <button className="btn" onClick={() => setSheet("lib")} type="button">
           Library
         </button>
-        <button className="btn" onClick={() => setSheet("kit")} type="button">
-          Brand kit
-        </button>
         <button className="btn primary" onClick={() => setSheet("export")} disabled={!st.img} type="button">
           Export
         </button>
-        <button className="btn" onClick={st.reset} type="button">
-          Reset
-        </button>
+
+        <div className="menu-wrap">
+          <button
+            className="btn"
+            aria-expanded={menu === "more"}
+            onClick={() => setMenu(menu === "more" ? null : "more")}
+            title="More"
+            type="button"
+          >
+            ⋯
+          </button>
+          {menu === "more" ? (
+            <div className="menu">
+              <button
+                className="btn"
+                onClick={() => {
+                  setSheet("kit");
+                  setMenu(null);
+                }}
+                type="button"
+              >
+                Brand kit
+              </button>
+              <button
+                className="btn"
+                onClick={() => {
+                  st.reset();
+                  setMenu(null);
+                }}
+                type="button"
+              >
+                Start over
+              </button>
+            </div>
+          ) : null}
+        </div>
       </header>
 
       <main className="shell">

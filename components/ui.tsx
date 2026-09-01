@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+
 /** Small shared controls. Class names match the ported stylesheet. */
 
 import { BRAND_SWATCHES } from "@/lib/core";
@@ -231,6 +233,38 @@ export function Sheet({
         <div className="sheet-body">{children}</div>
         {foot ? <div className="sheet-foot">{foot}</div> : null}
       </div>
+    </div>
+  );
+}
+
+/**
+ * A collapsed section. Everything that is occasionally useful lives behind one
+ * of these, so selecting a layer shows the four or five controls you actually
+ * reach for instead of all twelve.
+ */
+export function Collapsible({
+  title,
+  hint,
+  open,
+  children,
+}: {
+  title: string;
+  hint?: string;
+  /** start open — for the one section that is usually wanted */
+  open?: boolean;
+  children: React.ReactNode;
+}) {
+  const [on, setOn] = useState(Boolean(open));
+  return (
+    <div className={`fold${on ? " open" : ""}`}>
+      <button className="fold-head" onClick={() => setOn(v => !v)} type="button" aria-expanded={on}>
+        <span className="fold-caret" aria-hidden="true">
+          {on ? "▾" : "▸"}
+        </span>
+        <span className="fold-title">{title}</span>
+        {hint ? <span className="fold-hint">{hint}</span> : null}
+      </button>
+      {on ? <div className="fold-body">{children}</div> : null}
     </div>
   );
 }

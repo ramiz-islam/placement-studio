@@ -8,7 +8,7 @@
  * revise their UI without notice — edit this file, not the components.
  */
 
-import type { Layer } from "./layers";
+import type { Layer, LayerPatch } from "./layers";
 
 export type Lang = "en" | "najdi" | "gulf" | "msa";
 export type Fit = "cover" | "contain";
@@ -88,11 +88,14 @@ export interface Design {
   /** paint order, back to front */
   layers: Layer[];
   /**
-   * Per-placement positions: overrides[placementId][layerId]. Dragging inside
-   * one placement only ever writes here, so moving copy on TikTok cannot
-   * silently break Snapchat.
+   * Per-placement layer patches: overrides[placementId][layerId].
+   *
+   * The rule the whole app follows: **the panel edits every placement, the frame
+   * edits one.** Anything you change in the inspector updates the layer itself
+   * and therefore every channel; anything you do by hand on the frame — drag,
+   * resize, rotate — is written here and affects that placement alone.
    */
-  overrides: Record<string, Record<string, Pt>>;
+  overrides: Record<string, Record<string, LayerPatch>>;
 }
 
 export interface CreativeMeta {

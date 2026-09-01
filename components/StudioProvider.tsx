@@ -35,6 +35,7 @@ import {
   textLayer,
   type Layer,
   type LayerKind,
+  type LayerPatch,
   type NewLayerDefaults,
 } from "@/lib/layers";
 import { clearAnalysisCache, samplePad } from "@/lib/analysis";
@@ -43,6 +44,7 @@ import {
   clampPos,
   fitFor,
   masterZone,
+  patchFor,
   place,
   posFor,
   safeF,
@@ -119,8 +121,15 @@ export interface Studio extends StudioState {
   nudge: (dx: number, dy: number) => void;
   mergeSelected: () => void;
   canMerge: boolean;
-  /** live resize from an edge handle — coalesced into one undo step */
-  resizeLayer: (id: string, patch: Partial<Layer>) => void;
+  /**
+   * Live resize from an edge or rotate handle. Frame gestures are local: this
+   * writes a patch for the current placement and leaves the others alone.
+   */
+  resizeLayer: (id: string, patch: LayerPatch) => void;
+  /** does this placement override anything for this layer? */
+  layerPatch: (layerId: string) => LayerPatch | undefined;
+  /** drop this layer's per-placement adjustments */
+  resetLayerHere: (layerId: string) => void;
   select: (id: string | null, additive?: boolean) => void;
   moveLayer: (placementId: string, layerId: string, x: number, y: number) => void;
   /** apply one delta to every selected layer except the one already moved */
@@ -523,15 +532,59 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     [commit]
   );
 
-  /** One tag for the whole gesture, so a resize drag is a single undo step. */
+  /**
+   * One tag for the whole gesture, so a resize drag is a single undo step.
+   *
+   * This writes a per-placement patch rather than editing the layer, because a
+   * gesture on one frame should not resize the other 22. The inspector is the
+   * place to change something everywhere.
+   */
   const resizeLayer = useCallback(
-    (id: string, p: Partial<Layer>) =>
-      commit(`resize:${id}`, d => ({
-        ...d,
-        layers: d.layers.map(l => (l.id === id ? ({ ...l, ...p } as Layer) : l)),
-      })),
-    [commit]
+    (id: string, p: LayerPatch) =>
+      setS(prev => {
+        const plId = prev.active;
+        const per = prev.design.overrides[plId] ?? {};
+        const next: Design = {
+          ...prev.design,
+          overrides: { ...prev.design.overrides, [plId]: { ...per, [id]: { ...(per[id] ?? {}), ...p } } },
+        };
+        const now = Date.now();
+        const last = prev.past[prev.past.length - 1];
+        const tag = `resize:${plId}:${id}`;
+        const coalesce = Boolean(last && last.tag === tag && now - last.at < COALESCE_MS);
+        return {
+          ...prev,
+          design: next,
+          past: coalesce
+            ? prev.past.slice(0, -1).concat({ ...last!, at: now })
+            : [...prev.past, { design: prev.design, tag, at: now }].slice(-HISTORY_LIMIT),
+          future: [],
+        };
+      }),
+    []
   );
+
+  /** Drop one layer's hand-made adjustments on this placement only. */
+  const resetLayerHere = useCallback((layerId: string) => {
+    setS(prev => {
+      const plId = prev.active;
+      const per = { ...(prev.design.overrides[plId] ?? {}) };
+      if (!per[layerId]) return prev;
+      delete per[layerId];
+      const overrides = { ...prev.design.overrides };
+      if (Object.keys(per).length) overrides[plId] = per;
+      else delete overrides[plId];
+      return {
+        ...prev,
+        design: { ...prev.design, overrides },
+        past: [...prev.past, { design: prev.design, tag: `resetLayer:${layerId}`, at: Date.now() }].slice(
+          -HISTORY_LIMIT
+        ),
+        future: [],
+      };
+    });
+    say("Back to the shared layout for this layer");
+  }, [say]);
 
   const select = useCallback((id: string | null, additive = false) => {
     setS(prev => {
@@ -595,7 +648,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
         if (!layer) continue;
         const p = place(pl, prev.design, layer, ctx);
         const cur = posFor(prev.design, pl.id, layer);
-        per[id] = clampPos(p.box, cur.x + dx / pl.w, cur.y + dy / pl.h);
+        per[id] = { ...(per[id] ?? {}), pos: clampPos(p.box, cur.x + dx / pl.w, cur.y + dy / pl.h) };
       }
       const last = prev.past[prev.past.length - 1];
       const coalesce = Boolean(last && last.tag === "nudge" && Date.now() - last.at < COALESCE_MS);
@@ -652,10 +705,16 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
 
   const moveLayer = useCallback(
     (placementId: string, layerId: string, x: number, y: number) =>
-      commit(`move:${placementId}:${layerId}`, d => ({
-        ...d,
-        overrides: { ...d.overrides, [placementId]: { ...(d.overrides[placementId] ?? {}), [layerId]: { x, y } } },
-      })),
+      commit(`move:${placementId}:${layerId}`, d => {
+        const per = d.overrides[placementId] ?? {};
+        return {
+          ...d,
+          overrides: {
+            ...d.overrides,
+            [placementId]: { ...per, [layerId]: { ...(per[layerId] ?? {}), pos: { x, y } } },
+          },
+        };
+      }),
     [commit]
   );
 
@@ -678,7 +737,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
         if (!layer) continue;
         const p = place(pl, prev.design, layer, ctx);
         const cur = posFor(prev.design, placementId, layer);
-        per[id] = clampPos(p.box, cur.x + dx, cur.y + dy);
+        per[id] = { ...(per[id] ?? {}), pos: clampPos(p.box, cur.x + dx, cur.y + dy) };
       }
       return { ...prev, design: { ...prev.design, overrides: { ...prev.design.overrides, [placementId]: per } } };
     });
@@ -711,7 +770,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
         ...prev,
         design: {
           ...prev.design,
-          layers: prev.design.layers.map(l => (next[l.id] ? { ...l, pos: next[l.id] } : l)),
+          layers: prev.design.layers.map(l => (next[l.id] ? ({ ...l, ...next[l.id] } as Layer) : l)),
           overrides: {},
         },
         past: [...prev.past, { design: prev.design, tag: "snapMaster", at: Date.now() }].slice(-HISTORY_LIMIT),
@@ -721,6 +780,11 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     say("Master layout applied to every placement");
   }, [say]);
 
+  /**
+   * Promote everything this placement has been adjusted by hand to the shared
+   * layers, and clear every placement's overrides. What you are looking at
+   * becomes the baseline for all 23.
+   */
   const applyToAll = useCallback(() => {
     setS(prev => {
       const per = prev.design.overrides[prev.active] ?? {};
@@ -728,14 +792,14 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
         ...prev,
         design: {
           ...prev.design,
-          layers: prev.design.layers.map(l => (per[l.id] ? { ...l, pos: per[l.id] } : l)),
+          layers: prev.design.layers.map(l => (per[l.id] ? ({ ...l, ...per[l.id] } as Layer) : l)),
           overrides: {},
         },
         past: [...prev.past, { design: prev.design, tag: "applyAll", at: Date.now() }].slice(-HISTORY_LIMIT),
         future: [],
       };
     });
-    say("This position is now the default everywhere");
+    say("This layout is now the baseline for every placement");
   }, [say]);
 
   const resetThis = useCallback(() => {
@@ -803,6 +867,8 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     toFront,
     toBack,
     resizeLayer,
+    layerPatch: (layerId: string) => patchFor(s.design, s.active, layerId),
+    resetLayerHere,
     select,
     selectedId: s.selectedIds.length ? s.selectedIds[s.selectedIds.length - 1] : null,
     align,

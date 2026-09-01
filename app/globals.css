@@ -555,3 +555,43 @@ textarea[dir=rtl]{text-align:right}
 /* a multi-selection reads as a set, not as one thing */
 .lay.selected{outline:1.5px solid var(--blue-bright) !important;outline-offset:.6cqw}
 .device.dragmode .lay.selected{box-shadow:0 0 0 .35cqw rgba(74,133,255,.22)}
+
+/* rotate handle sits above the layer, on a short stem */
+.rh-rot{
+  left:50%;top:-9cqw;margin-left:-1.7cqw;cursor:grab;background:var(--lime);border-color:#141652;
+}
+.rh-rot::before{
+  content:"";position:absolute;left:50%;top:100%;width:.5cqw;height:5.6cqw;
+  margin-left:-.25cqw;background:var(--lime);opacity:.75;
+}
+.rh-rot:hover{background:#fff;border-color:var(--lime)}
+
+/* ============================================================
+   FOLDS — progressive disclosure
+   ============================================================ */
+.fold{border-top:1px solid var(--line-soft);margin-top:8px}
+.fold:first-of-type{margin-top:10px}
+.fold-head{
+  display:flex;align-items:center;gap:7px;width:100%;padding:8px 0;text-align:left;
+  color:var(--muted);transition:color .13s;
+}
+.fold-head:hover{color:var(--text)}
+.fold.open .fold-head{color:var(--text)}
+.fold-caret{width:10px;flex:none;font-size:10px;color:var(--muted-deep)}
+.fold-title{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;flex:1}
+.fold-hint{font-family:var(--f-mono);font-size:10.5px;color:var(--muted-deep)}
+.fold-body{padding-bottom:6px}
+.fold-body .field:last-child{margin-bottom:0}
+/* a folded panel in the right rail needs no separate heading */
+.col-right .fold{border-top:none;margin-top:0}
+.col-right .fold-head{padding:0 0 6px}
+
+/* top-bar menus */
+.menu-wrap{position:relative}
+.menu{
+  position:absolute;top:calc(100% + 6px);right:0;z-index:50;min-width:172px;
+  display:flex;flex-direction:column;gap:6px;padding:9px;
+  background:var(--ink-800);border:1px solid var(--line);border-radius:var(--r-m);
+  box-shadow:0 16px 40px -12px rgba(0,0,0,.85);
+}
+.menu .toggle,.menu .btn{width:100%;justify-content:flex-start;text-align:left}

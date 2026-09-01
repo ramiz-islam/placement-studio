@@ -15,7 +15,7 @@ import { ICONS, type CtaLayer, type Fill, type IconLayer, type Layer, type LogoL
 import { plainText, toggleWord, wordFlags } from "@/lib/geometry";
 import type { Align } from "@/lib/layers";
 import { shrinkImage, useStudio } from "./StudioProvider";
-import { ColorField, Field, MiniBtn } from "./ui";
+import { ColorField, Collapsible, Field, MiniBtn } from "./ui";
 
 /**
  * The textarea shows plain words; the accent markup lives in the stored string.
@@ -254,26 +254,6 @@ function TextInspector({ l, set }: { l: TextLayer; set: Set }) {
         />
       </Field>
 
-      <Field label="Second colour" hint="tap a word">
-        <div className="word-pick" dir={rtl ? "rtl" : undefined}>
-          {wordFlags(l.text).map((wf, i) => (
-            <button
-              key={`${i}-${wf.word}`}
-              className="word"
-              aria-pressed={wf.accent}
-              type="button"
-              style={wf.accent ? { color: l.color2, borderColor: l.color2 } : undefined}
-              onClick={() => set({ text: toggleWord(l.text, i) } as Partial<Layer>)}
-            >
-              {wf.word}
-            </button>
-          ))}
-        </div>
-        <p className="hint">
-          Tap any word to flip it to the second colour. Tap again to put it back.
-        </p>
-      </Field>
-
       <Field label="Alignment">
         <div className="row">
           {(["left", "center", "right"] as Align[]).map(a => (
@@ -304,49 +284,73 @@ function TextInspector({ l, set }: { l: TextLayer; set: Set }) {
           onChange={e => set({ size: parseFloat(e.target.value) } as Partial<Layer>)}
         />
       </Field>
-      <Field label="Block width" hint={`${l.blockW}% width`}>
-        <input
-          type="range"
-          min={20}
-          max={96}
-          step={1}
-          value={l.blockW}
-          onChange={e => set({ blockW: Number(e.target.value) } as Partial<Layer>)}
-        />
-      </Field>
-      <Field label="Line height" hint={l.lineHeight == null ? "font default" : l.lineHeight.toFixed(2)}>
-        <input
-          type="range"
-          min={0.9}
-          max={2}
-          step={0.02}
-          value={l.lineHeight ?? 1.15}
-          onChange={e => set({ lineHeight: parseFloat(e.target.value) } as Partial<Layer>)}
-        />
-      </Field>
-      <Field label="Letter spacing" hint={`${l.tracking.toFixed(2)}em`}>
-        <input
-          type="range"
-          min={-0.05}
-          max={0.4}
-          step={0.01}
-          value={l.tracking}
-          onChange={e => set({ tracking: parseFloat(e.target.value) } as Partial<Layer>)}
-        />
-      </Field>
-      <div className="row">
-        <MiniBtn on={l.upper} onClick={() => set({ upper: !l.upper } as Partial<Layer>)}>
-          UPPERCASE
-        </MiniBtn>
-        <MiniBtn on={l.scrim.on} onClick={() => set({ scrim: { ...l.scrim, on: !l.scrim.on } } as Partial<Layer>)}>
-          Scrim
-        </MiniBtn>
-      </div>
-
       <ColorField label="Colour" value={l.color} onChange={hex => set({ color: hex } as Partial<Layer>)} />
-      <ColorField label="Second colour" value={l.color2} onChange={hex => set({ color2: hex } as Partial<Layer>)} />
 
-      {l.scrim.on ? (
+      <Collapsible title="Two-tone" hint="colour individual words">
+        <Field label="Tap a word to flip it">
+          <div className="word-pick" dir={st.design.lang !== "en" ? "rtl" : undefined}>
+            {wordFlags(l.text).map((wf, i) => (
+              <button
+                key={`${i}-${wf.word}`}
+                className="word"
+                aria-pressed={wf.accent}
+                type="button"
+                style={wf.accent ? { color: l.color2, borderColor: l.color2 } : undefined}
+                onClick={() => set({ text: toggleWord(l.text, i) } as Partial<Layer>)}
+              >
+                {wf.word}
+              </button>
+            ))}
+          </div>
+        </Field>
+        <ColorField label="Second colour" value={l.color2} onChange={hex => set({ color2: hex } as Partial<Layer>)} />
+      </Collapsible>
+
+      <Collapsible title="Spacing and case">
+        <Field label="Block width" hint={`${l.blockW}% width`}>
+          <input
+            type="range"
+            min={20}
+            max={96}
+            step={1}
+            value={l.blockW}
+            onChange={e => set({ blockW: Number(e.target.value) } as Partial<Layer>)}
+          />
+        </Field>
+        <Field label="Line height" hint={l.lineHeight == null ? "font default" : l.lineHeight.toFixed(2)}>
+          <input
+            type="range"
+            min={0.9}
+            max={2}
+            step={0.02}
+            value={l.lineHeight ?? 1.15}
+            onChange={e => set({ lineHeight: parseFloat(e.target.value) } as Partial<Layer>)}
+          />
+        </Field>
+        <Field label="Letter spacing" hint={`${l.tracking.toFixed(2)}em`}>
+          <input
+            type="range"
+            min={-0.05}
+            max={0.4}
+            step={0.01}
+            value={l.tracking}
+            onChange={e => set({ tracking: parseFloat(e.target.value) } as Partial<Layer>)}
+          />
+        </Field>
+        <div className="row">
+          <MiniBtn on={l.upper} onClick={() => set({ upper: !l.upper } as Partial<Layer>)}>
+            UPPERCASE
+          </MiniBtn>
+        </div>
+      </Collapsible>
+
+      <Collapsible title="Scrim" hint={l.scrim.on ? "on" : "off"}>
+        <div className="row" style={{ marginBottom: 10 }}>
+          <MiniBtn on={l.scrim.on} onClick={() => set({ scrim: { ...l.scrim, on: !l.scrim.on } } as Partial<Layer>)}>
+            {l.scrim.on ? "Scrim on" : "Scrim off"}
+          </MiniBtn>
+        </div>
+        {l.scrim.on ? (
         <div className="subpanel">
           <FillFields label="Scrim" fill={l.scrim.fill} onChange={f => set({ scrim: { ...l.scrim, fill: f } } as Partial<Layer>)} />
           <Field label="Scrim padding" hint={`${l.scrim.pad}% of type size`}>
@@ -370,7 +374,8 @@ function TextInspector({ l, set }: { l: TextLayer; set: Set }) {
             />
           </Field>
         </div>
-      ) : null}
+        ) : null}
+      </Collapsible>
     </>
   );
 }
@@ -566,15 +571,18 @@ function ShapeInspector({ l, set }: { l: ShapeLayer; set: Set }) {
           onChange={e => set({ h: parseFloat(e.target.value) } as Partial<Layer>)}
         />
       </Field>
-      <Field label="Rotation" hint={`${l.rotation ?? 0}°`}>
-        <input
-          type="range"
-          min={-180}
-          max={180}
-          step={1}
-          value={l.rotation ?? 0}
-          onChange={e => set({ rotation: Number(e.target.value) } as Partial<Layer>)}
-        />
+      <Collapsible title="Rotation" hint={`${l.rotation ?? 0}°`}>
+        <p className="hint">Or drag the green handle above the shape on the frame — any angle, Shift for 15° steps.</p>
+        <Field label="Angle" hint={`${l.rotation ?? 0}°`}>
+          <input
+            type="range"
+            min={-180}
+            max={180}
+            step={1}
+            value={l.rotation ?? 0}
+            onChange={e => set({ rotation: Number(e.target.value) } as Partial<Layer>)}
+          />
+        </Field>
         <div className="row">
           {[0, 45, 90, 180].map(deg => (
             <MiniBtn key={deg} on={(l.rotation ?? 0) === deg} onClick={() => set({ rotation: deg } as Partial<Layer>)}>
@@ -582,7 +590,7 @@ function ShapeInspector({ l, set }: { l: ShapeLayer; set: Set }) {
             </MiniBtn>
           ))}
         </div>
-      </Field>
+      </Collapsible>
 
       {l.shape !== "ellipse" ? (
         <Field label="Corner radius" hint={`${l.radius}%`}>

@@ -229,6 +229,7 @@ function FocusView({
         ) : null}
       </div>
       <p className="pos-note">
+        <b>Panel edits apply to every channel. Dragging, resizing and rotating on the frame apply here only.</b>{" "}
         {hasFitOverride(st.design, pl.id) ? (
           <>
             <b style={{ color: "var(--blue-bright)" }}>
