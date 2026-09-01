@@ -64,6 +64,27 @@ export async function preloadLayerImages(design: Design): Promise<Map<string, HT
   return out;
 }
 
+/** Run a draw inside a rotation about the box centre. */
+function rotated(
+  g: CanvasRenderingContext2D,
+  deg: number,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  draw: (x: number, y: number) => void
+) {
+  if (!deg) {
+    draw(x, y);
+    return;
+  }
+  g.save();
+  g.translate(x + w / 2, y + h / 2);
+  g.rotate((deg * Math.PI) / 180);
+  draw(-w / 2, -h / 2);
+  g.restore();
+}
+
 /** The path for a shape, ready to fill or clip. */
 function shapePath(g: CanvasRenderingContext2D, shape: string, x: number, y: number, w: number, h: number, radius: number) {
   if (shape === "ellipse") {
@@ -170,20 +191,29 @@ function drawLayer(
   switch (p.layer.kind) {
     case "shape": {
       const l = p.layer;
+      // p.box is the rotated bounding box; the drawing itself uses the layer's
+      // own dimensions, centred in that box
+      const band = l.shape === "band";
+      const dw = band ? W : (l.w / 100) * W;
+      const dh = (l.h / 100) * H;
+      const cx = x + w / 2 - dw / 2;
+      const cy = y + h / 2 - dh / 2;
       const picture = l.src ? logoCache.get(l.src) : null;
-      if (picture) {
-        // an uploaded image, clipped to the shape
-        g.save();
-        shapePath(g, l.shape, x, y, w, h, l.radius);
-        g.clip();
-        const cr = coverRect(picture.naturalWidth, picture.naturalHeight, w, h, "cover");
-        g.drawImage(resampled(picture, cr.w, cr.h), x + cr.x, y + cr.y, cr.w, cr.h);
-        g.restore();
-        return;
-      }
-      g.fillStyle = paint(g, l.fill, x, y, w, h);
-      shapePath(g, l.shape, x, y, w, h, l.radius);
-      g.fill();
+
+      rotated(g, l.rotation ?? 0, cx, cy, dw, dh, (ox, oy) => {
+        if (picture) {
+          g.save();
+          shapePath(g, l.shape, ox, oy, dw, dh, l.radius);
+          g.clip();
+          const cr = coverRect(picture.naturalWidth, picture.naturalHeight, dw, dh, "cover");
+          g.drawImage(resampled(picture, cr.w, cr.h), ox + cr.x, oy + cr.y, cr.w, cr.h);
+          g.restore();
+          return;
+        }
+        g.fillStyle = paint(g, l.fill, ox, oy, dw, dh);
+        shapePath(g, l.shape, ox, oy, dw, dh, l.radius);
+        g.fill();
+      });
       return;
     }
 
@@ -199,17 +229,20 @@ function drawLayer(
         roundRect(g, x - pad, y - pad, w + pad * 2, ih + pad * 2, (shorter * l.scrim.radius) / 100);
         g.fill();
       }
-      if (custom) {
-        g.drawImage(resampled(custom, w, ih), x, y, w, ih);
-        return;
-      }
-      if (p.metrics.kind !== "icon") return;
-      g.save();
-      g.translate(x, y);
-      g.scale(w / 24, w / 24);
-      g.fillStyle = l.color;
-      g.fill(new Path2D(p.metrics.path));
-      g.restore();
+      const path = p.metrics.kind === "icon" ? p.metrics.path : null;
+      rotated(g, l.rotation ?? 0, x, y, w, ih, (ox, oy) => {
+        if (custom) {
+          g.drawImage(resampled(custom, w, ih), ox, oy, w, ih);
+          return;
+        }
+        if (!path) return;
+        g.save();
+        g.translate(ox, oy);
+        g.scale(w / 24, w / 24);
+        g.fillStyle = l.color;
+        g.fill(new Path2D(path));
+        g.restore();
+      });
       return;
     }
 
@@ -274,13 +307,16 @@ function drawLayer(
       g.textBaseline = "top";
       g.textAlign = "left";
       g.direction = m.rtl ? "rtl" : "ltr";
-      const ax = m.rtl ? x + w : x;
       let ty = y;
       const track = l.tracking * sizePx;
 
       for (const line of m.lines) {
         const scaled = line.map(t => ({ ...t, w: t.w * s }));
-        let tx = m.rtl ? ax - lineWidth(scaled, spaceW) : ax;
+        const lw = lineWidth(scaled, spaceW);
+        // each line is positioned inside the block according to the alignment
+        let tx = x;
+        if (m.align === "center") tx = x + (w - lw) / 2;
+        else if (m.align === "right") tx = x + w - lw;
         for (const t of scaled) {
           g.fillStyle = t.accent ? l.color2 : l.color;
           if (track) {

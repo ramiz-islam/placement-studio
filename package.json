@@ -4,7 +4,7 @@
   "private": true,
   "description": "Preview ad creative inside every channel's feed chrome, check safe zones, and generate statics from a single prompt.",
   "scripts": {
-    "dev": "next dev -p 3210",
+    "dev": "node scripts/dev.mjs",
     "build": "next build",
     "start": "next start -p 3210",
     "lint": "next lint",

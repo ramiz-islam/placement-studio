@@ -89,11 +89,16 @@ export interface DeviceProps {
   small?: boolean;
   /** draw the rounded phone shell; off means the exact ad frame */
   framed?: boolean;
-  selectedId?: string | null;
-  onSelect?: (layerId: string) => void;
+  selectedIds?: string[];
+  /** additive = ctrl/cmd or alt held, meaning add to or cycle the selection */
+  onSelect?: (layerId: string, additive: boolean) => void;
   onLayerMove?: (placementId: string, layerId: string, x: number, y: number) => void;
+  /** the rest of a multi-selection travels with the layer being dragged */
+  onSelectionMove?: (placementId: string, dx: number, dy: number, exceptId: string) => void;
   /** live resize; commits through the same history path as everything else */
   onLayerResize?: (layerId: string, patch: Partial<Layer>) => void;
+  /** clicking the artwork itself drops the selection */
+  onDeselect?: () => void;
 }
 
 export function Device(props: DeviceProps) {
@@ -112,10 +117,12 @@ export function Device(props: DeviceProps) {
     showChrome,
     small,
     framed,
-    selectedId,
+    selectedIds,
     onSelect,
     onLayerMove,
     onLayerResize,
+    onSelectionMove,
+    onDeselect,
   } = props;
 
   const deviceRef = useRef<HTMLDivElement>(null);
@@ -123,8 +130,17 @@ export function Device(props: DeviceProps) {
   const cq = (px: number) => `${((px / pl.w) * 100).toFixed(3)}cqw`;
   const placed = d.copyOn ? placeAll(pl, d, ctx) : [];
 
+  const isSelected = (id: string) => Boolean(selectedIds?.includes(id));
+
   function startDrag(layerId: string, ev: React.PointerEvent<HTMLDivElement>) {
-    onSelect?.(layerId);
+    // alt-click walks down through whatever is stacked under the pointer, which
+    // is the only sane way to reach a layer buried beneath another
+    const additive = ev.ctrlKey || ev.metaKey || ev.altKey;
+    onSelect?.(layerId, additive);
+    if (ev.altKey) {
+      ev.preventDefault();
+      return;
+    }
     if (small || !onLayerMove) return;
     ev.preventDefault();
     const el = ev.currentTarget;
@@ -147,10 +163,26 @@ export function Device(props: DeviceProps) {
     const at = (e: PointerEvent) =>
       clampPos(box, start.x + (e.clientX - start.px) / rect.width, start.y + (e.clientY - start.py) / rect.height);
 
+    // the other selected layers ride along, updated in the DOM during the drag
+    const others =
+      (selectedIds ?? []).includes(layerId) && (selectedIds ?? []).length > 1
+        ? (selectedIds ?? [])
+            .filter(id => id !== layerId)
+            .map(id => {
+              const node = device.querySelector<HTMLElement>(`[data-layer="${id}"]`);
+              return node ? { id, node, left: node.offsetLeft / rect.width, top: node.offsetTop / rect.height } : null;
+            })
+            .filter((v): v is { id: string; node: HTMLElement; left: number; top: number } => v !== null)
+        : [];
+
     const move = (e: PointerEvent) => {
       const { x, y } = at(e);
       el.style.top = pc(y);
       if (!isBand) el.style.left = pc(x);
+      for (const o of others) {
+        o.node.style.left = pc(o.left + (x - start.x));
+        o.node.style.top = pc(o.top + (y - start.y));
+      }
       read.style.left = pc(Math.max(0, x));
       read.style.top = pc(Math.max(0, y - 0.045));
       read.textContent = `${Math.round(x * pl.w)}, ${Math.round(y * pl.h)} px`;
@@ -163,6 +195,7 @@ export function Device(props: DeviceProps) {
       el.classList.remove("grabbing");
       read.remove();
       const { x, y } = at(e);
+      if (others.length) onSelectionMove?.(pl.id, x - start.x, y - start.y, layerId);
       onLayerMove(pl.id, layerId, x, y);
     };
     el.addEventListener("pointermove", move);
@@ -233,7 +266,9 @@ export function Device(props: DeviceProps) {
 
   /** Handles for the selected layer, sized in cqw so they hold at any preview scale. */
   function handles(l: Layer) {
-    if (small || selectedId !== l.id || !onLayerResize) return null;
+    // handles only on a single selection: with several selected they would
+    // fight each other for the same pixels
+    if (small || !onLayerResize || selectedIds?.length !== 1 || selectedIds[0] !== l.id) return null;
     const spec = resizeSpec(l);
     return (
       <>
@@ -265,7 +300,7 @@ export function Device(props: DeviceProps) {
     const l = p.layer;
     const isBand = l.kind === "shape" && l.shape === "band";
     const bad = !isBand && intrusion(pl, p.box).worst > 4;
-    const cls = `lay lay-${l.kind}${bad ? " bad-zone" : ""}${selectedId === l.id ? " selected" : ""}`;
+    const cls = `lay lay-${l.kind}${bad ? " bad-zone" : ""}${isSelected(l.id) ? " selected" : ""}`;
     const base: React.CSSProperties = { left: pc(p.box.x), top: pc(p.box.y), zIndex: 6 + i };
     const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => startDrag(l.id, e);
 
@@ -280,8 +315,13 @@ export function Device(props: DeviceProps) {
             onPointerDown={onPointerDown}
             style={{
               ...base,
-              width: pc(p.box.w),
-              height: pc(p.box.h),
+              // the box is the rotated bounding box; render the layer's own size
+              // centred inside it and rotate
+              width: pc(l.shape === "band" ? 1 : l.w / 100),
+              height: pc(l.h / 100),
+              left: pc(p.box.x + p.box.w / 2 - (l.shape === "band" ? 1 : l.w / 100) / 2),
+              top: pc(p.box.y + p.box.h / 2 - l.h / 100 / 2),
+              transform: l.rotation ? `rotate(${l.rotation}deg)` : undefined,
               background: l.src ? undefined : css(l.fill),
               borderRadius: l.shape === "ellipse" ? "50%" : `${l.radius}%`,
               clipPath: l.src ? undefined : clip,
@@ -319,7 +359,13 @@ export function Device(props: DeviceProps) {
             data-layer={l.id}
             className={cls}
             onPointerDown={onPointerDown}
-            style={{ ...base, width: pc(p.box.w) }}
+            style={{
+              ...base,
+              width: pc(l.w / 100),
+              left: pc(p.box.x + p.box.w / 2 - l.w / 100 / 2),
+              top: pc(p.box.y + p.box.h / 2 - (l.w / 100) * (pl.w / pl.h) / 2),
+              transform: l.rotation ? `rotate(${l.rotation}deg)` : undefined,
+            }}
           >
             {l.scrim.on ? (
               <span
@@ -433,7 +479,7 @@ export function Device(props: DeviceProps) {
               fontSize: cq(m.sizePx),
               lineHeight: m.lh,
               letterSpacing: l.tracking ? `${l.tracking}em` : undefined,
-              textAlign: m.rtl ? "right" : "left",
+              textAlign: m.align,
               textShadow: "0 .3cqw 1.4cqw rgba(0,0,0,.28)",
             }}
           >
@@ -471,7 +517,13 @@ export function Device(props: DeviceProps) {
       className={`device${small ? " grid-card" : " dragmode"}${framed ? " framed" : ""}`}
       style={{ width, aspectRatio: `${pl.w}/${pl.h}` }}
     >
-      <div className={`media fit-${fit}`} style={fit === "contain" ? { background: padColor } : undefined}>
+      <div
+        className={`media fit-${fit}`}
+        style={fit === "contain" ? { background: padColor } : undefined}
+        onPointerDown={() => {
+          if (!small) onDeselect?.();
+        }}
+      >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={src} alt={`Creative previewed in the ${pl.plat} ${pl.name} placement`} />
       </div>

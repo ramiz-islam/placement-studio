@@ -13,6 +13,7 @@ import { useRef } from "react";
 import { FONTS } from "@/lib/core";
 import { ICONS, type CtaLayer, type Fill, type IconLayer, type Layer, type LogoLayer, type ShapeLayer, type TextLayer } from "@/lib/layers";
 import { plainText, toggleWord, wordFlags } from "@/lib/geometry";
+import type { Align } from "@/lib/layers";
 import { shrinkImage, useStudio } from "./StudioProvider";
 import { ColorField, Field, MiniBtn } from "./ui";
 
@@ -22,21 +23,26 @@ import { ColorField, Field, MiniBtn } from "./ui";
  */
 function reflow(stored: string, plain: string): string {
   const flags = wordFlags(stored);
-  const words = plain.split(/\s+/).filter(Boolean);
-  const next = words.map((word, i) => ({ word, accent: flags[i]?.word === word ? flags[i].accent : false }));
-  const rebuilt: string[] = [];
-  let i = 0;
-  while (i < next.length) {
-    const accent = next[i].accent;
-    const group: string[] = [];
-    while (i < next.length && next[i].accent === accent) {
-      group.push(next[i].word);
-      i++;
+  // Split keeping the separators, so every space the user typed survives.
+  // The previous version split on /\s+/ and re-joined with a single space,
+  // which stripped the trailing space on every keystroke and made the space bar
+  // appear broken.
+  const parts = plain.split(/(\s+)/);
+  let wi = 0;
+  let out = "";
+  for (const part of parts) {
+    if (part === "") continue;
+    if (/^\s+$/.test(part)) {
+      out += part;
+      continue;
     }
-    rebuilt.push(accent ? `[${group.join(" ")}]` : group.join(" "));
+    const accent = flags[wi]?.word === part ? flags[wi].accent : false;
+    out += accent ? `[${part}]` : part;
+    wi++;
   }
-  return rebuilt.join(" ");
+  return out;
 }
+
 
 const KIND_ICON: Record<string, string> = {
   text: "T",
@@ -65,8 +71,8 @@ export function LayersPanel() {
           {[...d.layers].reverse().map(l => (
             <li
               key={l.id}
-              className={`layer-row${st.selectedId === l.id ? " on" : ""}${l.on ? "" : " off"}`}
-              onClick={() => st.select(l.id)}
+              className={`layer-row${st.selectedIds.includes(l.id) ? " on" : ""}${l.on ? "" : " off"}`}
+              onClick={e => st.select(l.id, e.ctrlKey || e.metaKey)}
             >
               <span className="lk" aria-hidden="true">
                 {KIND_ICON[l.kind]}
@@ -108,6 +114,14 @@ export function LayersPanel() {
             </li>
           ))}
         </ul>
+
+        {st.selectedIds.length > 1 ? (
+          <div className="row" style={{ marginBottom: 8 }}>
+            <MiniBtn onClick={st.mergeSelected}>
+              {st.canMerge ? `Merge ${st.selectedIds.length} text layers` : "Merge (text layers only)"}
+            </MiniBtn>
+          </div>
+        ) : null}
 
         <div className="add-row">
           <button className="mini-btn" onClick={() => st.addLayer("text")} type="button">
@@ -151,7 +165,9 @@ function Inspector({ layer }: { layer: Layer }) {
   return (
     <div className="panel">
       <div className="p-head">
-        <span className="p-title">{layer.kind}</span>
+        <span className="p-title">
+          {st.selectedIds.length > 1 ? `${layer.kind} · ${st.selectedIds.length} selected` : layer.kind}
+        </span>
         <div className="link-row">
           <button className="link-btn" onClick={() => st.duplicateLayer(layer.id)} type="button">
             Duplicate
@@ -256,6 +272,16 @@ function TextInspector({ l, set }: { l: TextLayer; set: Set }) {
         <p className="hint">
           Tap any word to flip it to the second colour. Tap again to put it back.
         </p>
+      </Field>
+
+      <Field label="Alignment">
+        <div className="row">
+          {(["left", "center", "right"] as Align[]).map(a => (
+            <MiniBtn key={a} on={(l.align ?? "left") === a} onClick={() => set({ align: a } as Partial<Layer>)}>
+              {a === "left" ? "Left" : a === "center" ? "Centre" : "Right"}
+            </MiniBtn>
+          ))}
+        </div>
       </Field>
 
       <Field label="Font">
@@ -540,6 +566,24 @@ function ShapeInspector({ l, set }: { l: ShapeLayer; set: Set }) {
           onChange={e => set({ h: parseFloat(e.target.value) } as Partial<Layer>)}
         />
       </Field>
+      <Field label="Rotation" hint={`${l.rotation ?? 0}°`}>
+        <input
+          type="range"
+          min={-180}
+          max={180}
+          step={1}
+          value={l.rotation ?? 0}
+          onChange={e => set({ rotation: Number(e.target.value) } as Partial<Layer>)}
+        />
+        <div className="row">
+          {[0, 45, 90, 180].map(deg => (
+            <MiniBtn key={deg} on={(l.rotation ?? 0) === deg} onClick={() => set({ rotation: deg } as Partial<Layer>)}>
+              {deg}°
+            </MiniBtn>
+          ))}
+        </div>
+      </Field>
+
       {l.shape !== "ellipse" ? (
         <Field label="Corner radius" hint={`${l.radius}%`}>
           <input
@@ -666,6 +710,16 @@ function IconInspector({ l, set }: { l: IconLayer; set: Set }) {
           step={1}
           value={l.w}
           onChange={e => set({ w: Number(e.target.value) } as Partial<Layer>)}
+        />
+      </Field>
+      <Field label="Rotation" hint={`${l.rotation ?? 0}°`}>
+        <input
+          type="range"
+          min={-180}
+          max={180}
+          step={1}
+          value={l.rotation ?? 0}
+          onChange={e => set({ rotation: Number(e.target.value) } as Partial<Layer>)}
         />
       </Field>
       {!l.src ? <ColorField label="Colour" value={l.color} onChange={hex => set({ color: hex } as Partial<Layer>)} /> : null}

@@ -43,13 +43,27 @@ function Studio() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setSheet(null);
+      const el = document.activeElement;
+      const inField = el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement;
+      if (e.key === "Escape") {
+        setSheet(null);
+        st.select(null);
+      }
+      // arrow keys nudge the selection: the dependable way to move a layer that
+      // is sitting underneath another
+      if (!inField && st.selectedIds.length && e.key.startsWith("Arrow")) {
+        e.preventDefault();
+        const step = e.shiftKey ? 40 : 4;
+        const dx = e.key === "ArrowLeft" ? -step : e.key === "ArrowRight" ? step : 0;
+        const dy = e.key === "ArrowUp" ? -step : e.key === "ArrowDown" ? step : 0;
+        st.nudge(dx, dy);
+        return;
+      }
       const meta = e.ctrlKey || e.metaKey;
       if (!meta) return;
       const k = e.key.toLowerCase();
       // never steal the shortcut from a field the user is typing in
-      const el = document.activeElement;
-      const typing = el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement;
+      const typing = inField;
       if (k === "z" && !e.shiftKey && !typing) {
         e.preventDefault();
         st.undo();
