@@ -78,6 +78,11 @@ export function LayersPanel() {
                 {KIND_ICON[l.kind]}
               </span>
               <span className="ln-name">{l.name}</span>
+              {l.group ? (
+                <span className="grp" title="Grouped — these layers move together">
+                  link
+                </span>
+              ) : null}
               {st.layerPatch(l.id) ? (
                 <span
                   className="local-dot"
@@ -122,11 +127,16 @@ export function LayersPanel() {
           ))}
         </ul>
 
-        {st.selectedIds.length > 1 ? (
+        {st.canMerge || st.canUngroup ? (
           <div className="row" style={{ marginBottom: 8 }}>
-            <MiniBtn onClick={st.mergeSelected}>
-              {st.canMerge ? `Merge ${st.selectedIds.length} text layers` : "Merge (text layers only)"}
-            </MiniBtn>
+            {st.canMerge ? (
+              <MiniBtn onClick={st.mergeSelected}>
+                {st.mergeIsFlatten
+                  ? `Merge ${st.selectedIds.length} text layers into one`
+                  : `Group these ${st.selectedIds.length} so they move together`}
+              </MiniBtn>
+            ) : null}
+            {st.canUngroup ? <MiniBtn onClick={st.ungroupSelected}>Ungroup</MiniBtn> : null}
           </div>
         ) : null}
 

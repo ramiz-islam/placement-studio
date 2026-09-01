@@ -71,6 +71,14 @@ interface Base {
   on: boolean;
   /** top-left, as a fraction of the placement canvas */
   pos: Pt;
+  /**
+   * Layers sharing a group id behave as one object: selecting any member
+   * selects them all, so they drag, align and nudge together. This is what
+   * "merge" means for layers that cannot be flattened into each other — a logo
+   * on a band, an icon on a shape — where you want one thing to move but still
+   * want to restyle either half later.
+   */
+  group?: string | null;
 }
 
 export type Align = "left" | "center" | "right";

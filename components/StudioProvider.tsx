@@ -121,6 +121,10 @@ export interface Studio extends StudioState {
   nudge: (dx: number, dy: number) => void;
   mergeSelected: () => void;
   canMerge: boolean;
+  /** true when merging would flatten text; false when it would group */
+  mergeIsFlatten: boolean;
+  ungroupSelected: () => void;
+  canUngroup: boolean;
   /**
    * Live resize from an edge or rotate handle. Frame gestures are local: this
    * writes a patch for the current placement and leaves the others alone.
@@ -595,12 +599,19 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
   const select = useCallback((id: string | null, additive = false) => {
     setS(prev => {
       if (id === null) return { ...prev, selectedIds: [] };
-      if (!additive) return { ...prev, selectedIds: [id] };
+      // grouped layers are one object: touching any member takes the whole set,
+      // with the clicked layer last so the inspector points at what you hit
+      const g = prev.design.layers.find(l => l.id === id)?.group;
+      const family = g
+        ? [...prev.design.layers.filter(l => l.group === g && l.id !== id).map(l => l.id), id]
+        : [id];
+      if (!additive) return { ...prev, selectedIds: family };
       const has = prev.selectedIds.includes(id);
-      // additive: toggle it, keeping the newest last so the inspector follows
       return {
         ...prev,
-        selectedIds: has ? prev.selectedIds.filter(x => x !== id) : [...prev.selectedIds, id],
+        selectedIds: has
+          ? prev.selectedIds.filter(x => !family.includes(x))
+          : [...prev.selectedIds.filter(x => !family.includes(x)), ...family],
       };
     });
   }, []);
@@ -670,13 +681,36 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   /**
-   * Merge the selected text layers into one, joining their lines. Only text
-   * merges: flattening a shape and a caption into a single object would throw
-   * away the ability to restyle either, which is the whole point of layers.
+   * Merge whatever is selected.
+   *
+   * Two or more text layers flatten into one, joining their lines — that is a
+   * true merge, and it is what you want for a headline and a stray subheading.
+   *
+   * Anything else groups instead. Flattening a logo into a shape would bake one
+   * into the other and lose the ability to restyle either, so the layers stay
+   * separate but move as a single object: pick up any member and the rest come
+   * with it. Ungroup puts them back.
    */
   const mergeSelected = useCallback(() => {
     setS(prev => {
-      const chosen = prev.design.layers.filter(l => prev.selectedIds.includes(l.id) && l.kind === "text");
+      const picked = prev.design.layers.filter(l => prev.selectedIds.includes(l.id));
+      if (picked.length < 2) return prev;
+
+      if (!picked.every(l => l.kind === "text")) {
+        const gid = `g-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}`;
+        const ids = new Set(picked.map(l => l.id));
+        return {
+          ...prev,
+          design: {
+            ...prev.design,
+            layers: prev.design.layers.map(l => (ids.has(l.id) ? ({ ...l, group: gid } as Layer) : l)),
+          },
+          past: [...prev.past, { design: prev.design, tag: "group", at: Date.now() }].slice(-HISTORY_LIMIT),
+          future: [],
+        };
+      }
+
+      const chosen = picked;
       if (chosen.length < 2) return prev;
       // keep the layer the inspector is pointed at — its styling is the one the
       // user was just looking at, so the result is what they expect
@@ -706,7 +740,27 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
         future: [],
       };
     });
-    say("Text layers merged");
+    say("Merged");
+  }, [say]);
+
+  /** Break a group back into loose layers. */
+  const ungroupSelected = useCallback(() => {
+    setS(prev => {
+      const groups = new Set(
+        prev.design.layers.filter(l => prev.selectedIds.includes(l.id) && l.group).map(l => l.group)
+      );
+      if (!groups.size) return prev;
+      return {
+        ...prev,
+        design: {
+          ...prev.design,
+          layers: prev.design.layers.map(l => (l.group && groups.has(l.group) ? ({ ...l, group: null } as Layer) : l)),
+        },
+        past: [...prev.past, { design: prev.design, tag: "ungroup", at: Date.now() }].slice(-HISTORY_LIMIT),
+        future: [],
+      };
+    });
+    say("Ungrouped");
   }, [say]);
 
   const moveLayer = useCallback(
@@ -880,7 +934,10 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     align,
     nudge,
     mergeSelected,
-    canMerge: s.design.layers.filter(l => s.selectedIds.includes(l.id) && l.kind === "text").length >= 2,
+    canMerge: s.selectedIds.length >= 2,
+    mergeIsFlatten: s.design.layers.filter(l => s.selectedIds.includes(l.id)).every(l => l.kind === "text"),
+    ungroupSelected,
+    canUngroup: s.design.layers.some(l => s.selectedIds.includes(l.id) && Boolean(l.group)),
     moveLayer,
     moveSelected,
     snapThis,

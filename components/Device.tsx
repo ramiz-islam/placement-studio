@@ -139,6 +139,8 @@ export function Device(props: DeviceProps) {
     // alt-click walks down through whatever is stacked under the pointer, which
     // is the only sane way to reach a layer buried beneath another
     const additive = ev.ctrlKey || ev.metaKey || ev.altKey;
+    // the frame deselects on pointerdown; a layer click must not reach it
+    ev.stopPropagation();
     onSelect?.(layerId, additive);
     if (ev.altKey) {
       ev.preventDefault();
@@ -303,9 +305,12 @@ export function Device(props: DeviceProps) {
 
   /** Handles for the selected layer, sized in cqw so they hold at any preview scale. */
   function handles(l: Layer) {
-    // handles only on a single selection: with several selected they would
-    // fight each other for the same pixels
-    if (small || !onLayerResize || selectedIds?.length !== 1 || selectedIds[0] !== l.id) return null;
+    // Handles go on the layer you clicked last — the same one the inspector is
+    // pointed at — so only one set is ever on screen. Gating on a single
+    // selection instead meant a grouped layer could not be resized at all,
+    // since selecting one member selects the whole group.
+    const primary = selectedIds?.length ? selectedIds[selectedIds.length - 1] : null;
+    if (small || !onLayerResize || primary !== l.id) return null;
     const spec = resizeSpec(l);
     return (
       <>
@@ -561,13 +566,13 @@ export function Device(props: DeviceProps) {
       data-placement={pl.id}
       className={`device${small ? " grid-card" : " dragmode"}${framed ? " framed" : ""}`}
       style={{ width, aspectRatio: `${pl.w}/${pl.h}` }}
+      onPointerDown={() => {
+        if (!small) onDeselect?.();
+      }}
     >
       <div
         className={`media fit-${fit}`}
         style={fit === "contain" ? { background: padColor } : undefined}
-        onPointerDown={() => {
-          if (!small) onDeselect?.();
-        }}
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={src} alt={`Creative previewed in the ${pl.plat} ${pl.name} placement`} />

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { PLACEMENTS } from "@/lib/core";
 import { RATIO_LABEL, fitFor, hasFitOverride, hasOverride } from "@/lib/geometry";
 import { audit } from "@/lib/audit";
@@ -131,6 +131,13 @@ function FocusView({
   const tall = pl.h / pl.w > 1.2;
   const custom = hasOverride(st.design, pl.id);
   const localCount = Object.keys(st.design.overrides[pl.id] ?? {}).length;
+  // how much hand-tuning on other placements a "use everywhere" would destroy
+  const otherCustom = Object.entries(st.design.overrides).filter(
+    ([id, per]) => id !== pl.id && Object.keys(per).length > 0
+  ).length;
+  const [armed, setArmed] = useState(false);
+  // never leave the confirmation armed when the user has moved on
+  useEffect(() => setArmed(false), [pl.id, otherCustom]);
 
   return (
     <div className="device-wrap">
@@ -219,15 +226,41 @@ function FocusView({
         <button className="btn" onClick={st.snapThis} type="button">
           Snap into this safe box
         </button>
-        <button className="btn" onClick={st.applyToAll} type="button">
-          Apply this position everywhere
+
+        {/* This is the one control here that changes other channels, and it
+            throws away whatever they had been adjusted to. It used to say
+            "Apply this position everywhere" and do that silently, which reads
+            like a save button. Now it names the cost and asks first. */}
+        <button
+          className={`btn${armed ? " warn" : ""}`}
+          onClick={() => {
+            if (otherCustom > 0 && !armed) return setArmed(true);
+            setArmed(false);
+            st.applyToAll();
+          }}
+          title={
+            otherCustom > 0
+              ? `${otherCustom} other placements have their own adjustments; this replaces them`
+              : "Make this layout the starting point for all 23 placements"
+          }
+          type="button"
+        >
+          {armed
+            ? `Discard adjustments on ${otherCustom} other ${otherCustom === 1 ? "placement" : "placements"}?`
+            : "Use this layout on all channels"}
         </button>
+        {armed ? (
+          <button className="btn" onClick={() => setArmed(false)} type="button">
+            Cancel
+          </button>
+        ) : null}
+
         <button className="btn" onClick={st.snapAllToMaster} type="button">
           Snap all to master zone
         </button>
         {custom ? (
           <button className="btn" onClick={st.resetThis} type="button">
-            Reset to default
+            Reset this placement
           </button>
         ) : null}
       </div>
