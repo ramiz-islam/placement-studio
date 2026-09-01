@@ -78,7 +78,10 @@ export interface BrandKit {
  * so "add another subheading" and "add a shape" are the same operation.
  */
 export interface Design {
+  /** the default fit; a placement can override it */
   fit: Fit;
+  /** fitOverrides[placementId] — crop or letterbox is a per-channel decision */
+  fitOverrides: Record<string, Fit>;
   lang: Lang;
   /** master switch: hide every layer at once to judge the artwork alone */
   copyOn: boolean;
@@ -102,6 +105,7 @@ export interface CreativeMeta {
 /** Everything about a design except the layers, which need the brand kit. */
 export const DESIGN_BASE: Omit<Design, "layers"> = {
   fit: "cover",
+  fitOverrides: {},
   lang: "en",
   copyOn: true,
   overrides: {},

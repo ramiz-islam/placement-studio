@@ -1,7 +1,7 @@
 "use client";
 
 import { PLACEMENTS } from "@/lib/core";
-import { RATIO_LABEL, masterZone } from "@/lib/geometry";
+import { RATIO_LABEL, fitFor, masterZone } from "@/lib/geometry";
 import { audit, grade, type Level } from "@/lib/audit";
 import { useStudio } from "./StudioProvider";
 
@@ -20,7 +20,7 @@ export function AuditPanel() {
         meta: st.meta!,
         design: st.design,
         logo: st.logo,
-        fit: st.design.fit,
+        fit: fitFor(st.design, pl.id),
         padColor: st.padColor,
         ver: st.ver,
       })

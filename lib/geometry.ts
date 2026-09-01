@@ -6,10 +6,14 @@
  * rendered into the file.
  */
 
-import { FONT, isRTL, type Design, type Lang, type Placement, type Pt, type SafeBox } from "./core";
+import { FONT, isRTL, type Design, type Fit, type Lang, type Placement, type Pt, type SafeBox } from "./core";
 import { ICON, type Layer, type TextLayer } from "./layers";
 
 export const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
+
+/** Crop or letterbox is a per-channel decision, with a shared default. */
+export const fitFor = (d: Design, placementId: string): Fit => d.fitOverrides[placementId] ?? d.fit;
+export const hasFitOverride = (d: Design, placementId: string) => placementId in d.fitOverrides;
 
 /**
  * The position a layer actually uses on a given placement: its own override if
@@ -173,6 +177,46 @@ export function wrapTokens(tokens: Token[], spaceW: number, maxPx: number): Toke
 
 export const lineWidth = (line: Token[], spaceW: number) =>
   line.reduce((a, t) => a + t.w, 0) + spaceW * Math.max(0, line.length - 1);
+
+/* ---------- picking which words take the second colour ----------
+   The [bracket] syntax is the storage format; nobody should have to type it.
+   These turn the text into a list of words the UI can toggle, and back again. */
+
+export interface WordFlag {
+  word: string;
+  accent: boolean;
+}
+
+export function wordFlags(src: string): WordFlag[] {
+  const out: WordFlag[] = [];
+  for (const r of parseRuns(src)) {
+    for (const w of r.text.split(/\s+/).filter(Boolean)) out.push({ word: w, accent: r.accent });
+  }
+  return out;
+}
+
+/** Rebuild the text, wrapping each run of accented words in one bracket pair. */
+export function fromWordFlags(flags: WordFlag[]): string {
+  const parts: string[] = [];
+  let i = 0;
+  while (i < flags.length) {
+    const accent = flags[i].accent;
+    const group: string[] = [];
+    while (i < flags.length && flags[i].accent === accent) {
+      group.push(flags[i].word);
+      i++;
+    }
+    parts.push(accent ? `[${group.join(" ")}]` : group.join(" "));
+  }
+  return parts.join(" ");
+}
+
+export function toggleWord(src: string, index: number): string {
+  const flags = wordFlags(src);
+  if (!flags[index]) return src;
+  flags[index] = { ...flags[index], accent: !flags[index].accent };
+  return fromWordFlags(flags);
+}
 
 /* ============================================================
    LAYER GEOMETRY

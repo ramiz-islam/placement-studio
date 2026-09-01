@@ -144,7 +144,8 @@ export function Device(props: DeviceProps) {
     const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => startDrag(l.id, e);
 
     switch (l.kind) {
-      case "shape":
+      case "shape": {
+        const clip = l.shape === "triangle" ? "polygon(50% 0%, 100% 100%, 0% 100%)" : undefined;
         return (
           <div
             key={l.id}
@@ -155,11 +156,23 @@ export function Device(props: DeviceProps) {
               ...base,
               width: pc(p.box.w),
               height: pc(p.box.h),
-              background: css(l.fill),
+              background: l.src ? undefined : css(l.fill),
               borderRadius: l.shape === "ellipse" ? "50%" : `${l.radius}%`,
+              clipPath: clip,
+              overflow: "hidden",
             }}
-          />
+          >
+            {l.src ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={l.src}
+                alt={l.name}
+                style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+              />
+            ) : null}
+          </div>
         );
+      }
 
       case "icon":
         return (
@@ -170,6 +183,17 @@ export function Device(props: DeviceProps) {
             onPointerDown={onPointerDown}
             style={{ ...base, width: pc(p.box.w) }}
           >
+            {l.scrim.on ? (
+              <span
+                className="scrim-bg"
+                aria-hidden="true"
+                style={{
+                  inset: `-${l.scrim.pad}%`,
+                  background: css(l.scrim.fill),
+                  borderRadius: `${l.scrim.radius}%`,
+                }}
+              />
+            ) : null}
             {l.src ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img src={l.src} alt={l.name} />

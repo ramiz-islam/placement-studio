@@ -94,7 +94,7 @@ export interface LogoLayer extends Base {
   band: { on: boolean; fill: Fill; pad: number };
 }
 
-export type ShapeKind = "rect" | "ellipse" | "band" | "line";
+export type ShapeKind = "rect" | "ellipse" | "triangle" | "band" | "line";
 
 export interface ShapeLayer extends Base {
   kind: "shape";
@@ -105,6 +105,11 @@ export interface ShapeLayer extends Base {
   fill: Fill;
   /** % of the shorter side */
   radius: number;
+  /**
+   * An uploaded image, clipped to the shape. With this set the shape becomes a
+   * picture frame — a logo lockup, a badge, a cut-out — instead of flat colour.
+   */
+  src: string | null;
 }
 
 export interface IconLayer extends Base {
@@ -115,6 +120,8 @@ export interface IconLayer extends Base {
   /** % of frame width */
   w: number;
   color: string;
+  /** the same plate the text and logo layers get */
+  scrim: Plate;
 }
 
 export type Layer = TextLayer | CtaLayer | LogoLayer | ShapeLayer | IconLayer;
@@ -219,6 +226,7 @@ export function shapeLayer(over: Partial<ShapeLayer> = {}): ShapeLayer {
     h: 12,
     fill: solid("#FF5450", 100),
     radius: 8,
+    src: null,
     ...over,
   };
 }
@@ -234,6 +242,7 @@ export function iconLayer(over: Partial<IconLayer> = {}): IconLayer {
     src: null,
     w: 8,
     color: "#BFFF00",
+    scrim: { ...noPlate("#FFFFFF", 100), pad: 30, radius: 50 },
     ...over,
   };
 }

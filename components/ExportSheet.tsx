@@ -8,11 +8,13 @@ import {
   encode,
   encodeUnderCap,
   exportName,
+  preloadLayerImages,
   prettyBytes,
   renderPlacement,
   upscaleFactor,
   type ExportFormat,
 } from "@/lib/render";
+import { fitFor } from "@/lib/geometry";
 import { useStudio } from "./StudioProvider";
 import { Field, MiniBtn, Sheet, Spinner } from "./ui";
 
@@ -71,7 +73,7 @@ export function ExportSheet({ open, onClose }: { open: boolean; onClose: () => v
     ? Math.max(
         1,
         ...PLACEMENTS.filter(p => picked.has(p.id)).map(p =>
-          upscaleFactor(p, st.img!, st.design.fit, scale)
+          upscaleFactor(p, st.img!, fitFor(st.design, p.id), scale)
         )
       )
     : 1;
@@ -86,18 +88,22 @@ export function ExportSheet({ open, onClose }: { open: boolean; onClose: () => v
       /* fonts may already be resolved */
     }
 
+    // decode uploaded shape/icon images once, so none of them miss the render
+    const images = await preloadLayerImages(st.design);
+
     const results: Rendered[] = [];
     for (const pl of PLACEMENTS.filter(p => picked.has(p.id))) {
       const canvas = renderPlacement(pl, {
         scale,
         copy: withCopy,
         guides: withGuides,
-        fit: st.design.fit,
+        fit: fitFor(st.design, pl.id),
         padColor: st.padColor,
         img: st.img,
         logo: st.logo,
         design: st.design,
         ctx: st.ctx,
+        images,
       });
       const cap = pl.maxMB * 1048576;
       const enc = fitCap
@@ -113,7 +119,7 @@ export function ExportSheet({ open, onClose }: { open: boolean; onClose: () => v
         quality: enc.quality,
         format: enc.format,
         overCap: enc.bytes > cap,
-        upscale: upscaleFactor(pl, st.img, st.design.fit, scale),
+        upscale: upscaleFactor(pl, st.img, fitFor(st.design, pl.id), scale),
       });
       // let the UI breathe between large renders
       await new Promise(r => setTimeout(r, 0));
