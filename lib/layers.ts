@@ -17,6 +17,25 @@ import type { Pt } from "./core";
 
 export type LayerKind = "text" | "cta" | "logo" | "shape" | "icon";
 
+/**
+ * What direct manipulation on the frame can override for a single placement.
+ * Deliberately narrow: these are the properties you change by dragging, and
+ * nothing else, so a per-placement tweak can never fork the styling.
+ */
+export interface LayerPatch {
+  pos?: Pt;
+  /** width, % of frame — shapes, logos, icons */
+  w?: number;
+  /** height, % of frame — shapes */
+  h?: number;
+  /** type size, % of frame — text and buttons */
+  size?: number;
+  /** text block width, % of frame */
+  blockW?: number;
+  /** degrees */
+  rotation?: number;
+}
+
 /** Solid when `color2` is null, otherwise a linear gradient at `angle`. */
 export interface Fill {
   color: string;

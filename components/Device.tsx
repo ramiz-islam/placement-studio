@@ -10,7 +10,7 @@
 
 import { useRef } from "react";
 import type { Design, Placement } from "@/lib/core";
-import { ICON, type Fill, type Layer } from "@/lib/layers";
+import { ICON, type Fill, type Layer, type LayerPatch } from "@/lib/layers";
 import {
   clamp,
   clampPos,
@@ -40,6 +40,8 @@ interface ResizeSpec {
   height?: Dim;
   /** the corner scales width proportionally rather than freely */
   proportional?: boolean;
+  /** a handle above the layer that spins it to any angle */
+  rotate?: boolean;
 }
 
 function resizeSpec(l: Layer): ResizeSpec {
@@ -49,11 +51,12 @@ function resizeSpec(l: Layer): ResizeSpec {
       return { width: "blockW", height: "size" };
     case "cta":
       return { width: "size", height: "size" };
-    case "logo":
     case "icon":
+      return { width: "w", proportional: true, rotate: true };
+    case "logo":
       return { width: "w", proportional: true };
     case "shape":
-      return l.shape === "band" ? { height: "h" } : { width: "w", height: "h" };
+      return l.shape === "band" ? { height: "h", rotate: false } : { width: "w", height: "h", rotate: true };
   }
 }
 
@@ -96,7 +99,7 @@ export interface DeviceProps {
   /** the rest of a multi-selection travels with the layer being dragged */
   onSelectionMove?: (placementId: string, dx: number, dy: number, exceptId: string) => void;
   /** live resize; commits through the same history path as everything else */
-  onLayerResize?: (layerId: string, patch: Partial<Layer>) => void;
+  onLayerResize?: (layerId: string, patch: LayerPatch) => void;
   /** clicking the artwork itself drops the selection */
   onDeselect?: () => void;
 }
@@ -264,6 +267,36 @@ export function Device(props: DeviceProps) {
     window.addEventListener("pointerup", up);
   }
 
+  /**
+   * Spin a layer to any angle by dragging the handle above it. Holding shift
+   * snaps to 15° steps, which is how you actually get a clean 45.
+   */
+  function startRotate(layer: Layer, ev: React.PointerEvent<HTMLSpanElement>) {
+    if (small || !onLayerResize) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    const host = ev.currentTarget.parentElement as HTMLElement | null;
+    if (!host) return;
+    const r = host.getBoundingClientRect();
+    const cx = r.left + r.width / 2;
+    const cy = r.top + r.height / 2;
+    ev.currentTarget.setPointerCapture(ev.pointerId);
+
+    const move = (e: PointerEvent) => {
+      // 0deg means the handle is straight up, so offset by a quarter turn
+      let deg = (Math.atan2(e.clientY - cy, e.clientX - cx) * 180) / Math.PI + 90;
+      if (deg > 180) deg -= 360;
+      if (e.shiftKey) deg = Math.round(deg / 15) * 15;
+      onLayerResize!(layer.id, { rotation: Math.round(deg) });
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  }
+
   /** Handles for the selected layer, sized in cqw so they hold at any preview scale. */
   function handles(l: Layer) {
     // handles only on a single selection: with several selected they would
@@ -288,6 +321,13 @@ export function Device(props: DeviceProps) {
         ) : null}
         {spec.width && spec.height ? (
           <span className="rh rh-se" title="Drag to resize" onPointerDown={e => startResize(l, "se", e)} />
+        ) : null}
+        {spec.rotate ? (
+          <span
+            className="rh rh-rot"
+            title="Drag to rotate · hold Shift for 15° steps"
+            onPointerDown={e => startRotate(l, e)}
+          />
         ) : null}
       </>
     );

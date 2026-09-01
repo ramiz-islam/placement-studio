@@ -7,7 +7,7 @@
  */
 
 import { FONT, isRTL, type Design, type Fit, type Lang, type Placement, type Pt, type SafeBox } from "./core";
-import { ICON, type Align, type Layer, type TextLayer } from "./layers";
+import { ICON, type Align, type Layer, type LayerPatch, type TextLayer } from "./layers";
 
 export const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 
@@ -38,8 +38,21 @@ export const hasFitOverride = (d: Design, placementId: string) => placementId in
  * it has one, otherwise the layer's shared default. This is what keeps a drag
  * local to the frame it happened on.
  */
+/**
+ * The layer as this placement sees it: the shared layer with that placement's
+ * hand-made adjustments laid over the top.
+ */
+export function resolveLayer<T extends Layer>(d: Design, placementId: string, layer: T): T {
+  const patch = d.overrides[placementId]?.[layer.id];
+  return patch ? ({ ...layer, ...patch } as T) : layer;
+}
+
 export const posFor = (d: Design, placementId: string, layer: Layer): Pt =>
-  d.overrides[placementId]?.[layer.id] ?? layer.pos;
+  resolveLayer(d, placementId, layer).pos;
+
+/** What this placement overrides for one layer, if anything. */
+export const patchFor = (d: Design, placementId: string, layerId: string): LayerPatch | undefined =>
+  d.overrides[placementId]?.[layerId];
 
 export const hasOverride = (d: Design, placementId: string, layerId?: string): boolean => {
   const per = d.overrides[placementId];
@@ -292,8 +305,11 @@ export interface LayoutContext {
 }
 
 /** Geometry for one layer on one placement. */
-export function place(pl: Placement, d: Design, layer: Layer, c: LayoutContext, placementId = pl.id): Placed {
-  const pos = posFor(d, placementId, layer);
+export function place(pl: Placement, d: Design, raw: Layer, c: LayoutContext, placementId = pl.id): Placed {
+  // every dimension below reads from the resolved layer, so a per-placement
+  // resize or rotation is reflected in the preview, the audit and the export
+  const layer = resolveLayer(d, placementId, raw);
+  const pos = layer.pos;
   const W = pl.w;
   const H = pl.h;
   const rtl = isRTL(c.lang);
@@ -460,7 +476,12 @@ export type AlignEdge = "left" | "hcenter" | "right" | "top" | "vcenter" | "bott
  * centring a caption on a band moves the caption and leaves the band — the band
  * already spans the box.
  */
-export function alignedPositions(placed: Placed[], edge: AlignEdge, d: Design, placementId: string): Record<string, Pt> {
+export function alignedPositions(
+  placed: Placed[],
+  edge: AlignEdge,
+  d: Design,
+  placementId: string
+): Record<string, LayerPatch> {
   if (!placed.length) return {};
   const single = placed.length === 1;
   const minX = single ? 0 : Math.min(...placed.map(p => p.box.x));
@@ -468,7 +489,7 @@ export function alignedPositions(placed: Placed[], edge: AlignEdge, d: Design, p
   const minY = single ? 0 : Math.min(...placed.map(p => p.box.y));
   const maxY = single ? 1 : Math.max(...placed.map(p => p.box.y + p.box.h));
 
-  const out: Record<string, Pt> = {};
+  const out: Record<string, LayerPatch> = {};
   for (const p of placed) {
     const cur = posFor(d, placementId, p.layer);
     // a band spans the frame; only its vertical position is meaningful
@@ -494,7 +515,7 @@ export function alignedPositions(placed: Placed[], edge: AlignEdge, d: Design, p
         y = maxY - p.box.h;
         break;
     }
-    out[p.layer.id] = { x, y };
+    out[p.layer.id] = { ...(d.overrides[placementId]?.[p.layer.id] ?? {}), pos: { x, y } };
   }
   return out;
 }
@@ -510,7 +531,7 @@ export function stackInside(
   zone: SafeBox,
   c: LayoutContext,
   placementId = pl.id
-): Record<string, Pt> {
+): Record<string, LayerPatch> {
   const pad = 0.02;
   const top = zone.t + pad;
   const bot = 1 - zone.b - pad;
@@ -524,13 +545,17 @@ export function stackInside(
   const total = stacked.reduce((a, p) => a + p.box.h, 0) + gap * Math.max(0, stacked.length - 1);
   let y = clamp(top + (bot - top - total) / 2, top, Math.max(top, bot - total));
 
-  const out: Record<string, Pt> = {};
+  const out: Record<string, LayerPatch> = {};
+  const keep = (id: string) => d.overrides[placementId]?.[id] ?? {};
   for (const p of placed) {
     if (p.layer.kind === "shape" && p.layer.shape === "band") {
-      out[p.layer.id] = { x: 0, y: clamp(p.layer.pos.y, 0, 1 - p.box.h) };
+      out[p.layer.id] = { ...keep(p.layer.id), pos: { x: 0, y: clamp(p.layer.pos.y, 0, 1 - p.box.h) } };
       continue;
     }
-    out[p.layer.id] = { x: rtl ? clamp(right - p.box.w, left, right) : left, y };
+    out[p.layer.id] = {
+      ...keep(p.layer.id),
+      pos: { x: rtl ? clamp(right - p.box.w, left, right) : left, y },
+    };
     y += p.box.h + gap;
   }
   return out;
