@@ -291,6 +291,59 @@ export function LeftRail({ onGenerate }: { onGenerate: () => void }) {
                 onChange={e => st.patchDesign({ logoW: Number(e.target.value) })}
               />
             </div>
+
+            <div className="row">
+              <MiniBtn on={d.logoScrim} onClick={() => st.patchDesign({ logoScrim: !d.logoScrim })}>
+                Plate behind logo
+              </MiniBtn>
+            </div>
+
+            {d.logoScrim ? (
+              <div className="subpanel">
+                <ColorField
+                  label="Plate colour"
+                  value={d.logoScrimColor}
+                  onChange={hex => st.patchDesign({ logoScrimColor: hex })}
+                />
+                <Field label="Plate opacity" hint={`${d.logoScrimOpacity}%`}>
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    step={1}
+                    value={d.logoScrimOpacity}
+                    onChange={e => st.patchDesign({ logoScrimOpacity: Number(e.target.value) })}
+                  />
+                </Field>
+                <Field label="Plate padding" hint={`${d.logoScrimPad}% of logo`}>
+                  <input
+                    type="range"
+                    min={0}
+                    max={60}
+                    step={1}
+                    value={d.logoScrimPad}
+                    onChange={e => st.patchDesign({ logoScrimPad: Number(e.target.value) })}
+                  />
+                </Field>
+                <Field
+                  label="Corner radius"
+                  hint={d.logoScrimRadius >= 50 ? "pill" : `${d.logoScrimRadius}%`}
+                >
+                  <input
+                    type="range"
+                    min={0}
+                    max={50}
+                    step={1}
+                    value={d.logoScrimRadius}
+                    onChange={e => st.patchDesign({ logoScrimRadius: Number(e.target.value) })}
+                  />
+                </Field>
+                <p className="hint">
+                  A white plate is how most brands keep a full-colour logo legible over photography — and it is
+                  usually what a platform&apos;s own logo slot expects.
+                </p>
+              </div>
+            ) : null}
           </>
         ) : (
           <button className="drop tight" type="button" onClick={() => logoRef.current?.click()}>

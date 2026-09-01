@@ -9,10 +9,11 @@ import { NextResponse } from "next/server";
 import OpenAI from "openai";
 import { SHAPES } from "@/lib/core";
 import { buildImagePrompt, type ImageBrief } from "@/lib/prompt";
-import { saveGeneration } from "@/lib/library";
+import { saveGeneration, storageDriver } from "@/lib/library";
 
 export const runtime = "nodejs";
-export const maxDuration = 300;
+// 60s is the ceiling on Vercel Hobby; Pro can raise this to 300.
+export const maxDuration = 60;
 
 interface Body extends ImageBrief {
   count?: number;
@@ -84,7 +85,8 @@ export async function POST(req: Request) {
     const results = [];
     for (const b64 of images) {
       const id = `gen-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}`;
-      await saveGeneration(id, Buffer.from(b64, "base64"), {
+      const png = Buffer.from(b64, "base64");
+      const saved = await saveGeneration(id, png, {
         typeId: body.typeId,
         shapeId: body.shapeId,
         market: body.market,
@@ -93,10 +95,17 @@ export async function POST(req: Request) {
         width: w,
         height: h,
       });
-      results.push({ id, dataUrl: `data:image/png;base64,${b64}`, width: w, height: h });
+      results.push({
+        id,
+        dataUrl: `data:image/png;base64,${b64}`,
+        width: w,
+        height: h,
+        bytes: png.byteLength,
+        savedToLibrary: Boolean(saved),
+      });
     }
 
-    return NextResponse.json({ prompt, model, results });
+    return NextResponse.json({ prompt, model, driver: storageDriver(), results });
   } catch (err: unknown) {
     const e = err as { status?: number; message?: string };
     const status = e.status ?? 500;

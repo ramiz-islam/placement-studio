@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
-import { listGenerations, readGeneration } from "@/lib/library";
+import { deleteGeneration, listGenerations, readGeneration, storageDriver } from "@/lib/library";
 
 export const runtime = "nodejs";
 
-/** GET /api/library            -> recent generations
- *  GET /api/library?id=gen-x   -> that generation's PNG */
+/** GET /api/library            -> recent generations + which driver is storing them
+ *  GET /api/library?id=gen-x   -> that generation's PNG (fs driver only) */
 export async function GET(req: Request) {
   const id = new URL(req.url).searchParams.get("id");
   if (id) {
@@ -14,5 +14,15 @@ export async function GET(req: Request) {
       headers: { "content-type": "image/png", "cache-control": "private, max-age=86400" },
     });
   }
-  return NextResponse.json({ entries: await listGenerations() });
+  return NextResponse.json({ entries: await listGenerations(), driver: storageDriver() });
+}
+
+/** DELETE /api/library?id=gen-x */
+export async function DELETE(req: Request) {
+  const id = new URL(req.url).searchParams.get("id");
+  if (!id) return NextResponse.json({ error: "Which one?" }, { status: 400 });
+  const ok = await deleteGeneration(id);
+  return ok
+    ? NextResponse.json({ deleted: id })
+    : NextResponse.json({ error: "Could not delete that generation." }, { status: 404 });
 }

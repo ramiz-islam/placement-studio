@@ -5,7 +5,7 @@
       "name": "placement-studio",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
-      "port": 3140
+      "port": 3210
     }
   ]
 }

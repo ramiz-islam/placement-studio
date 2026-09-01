@@ -13,7 +13,7 @@
 import { useEffect, useState } from "react";
 import { CREATIVE_TYPES, MARKETS, SHAPES, isRTL, type Lang } from "@/lib/core";
 import { reservedForShape } from "@/lib/prompt";
-import { useStudio } from "./StudioProvider";
+import { shrinkImage, useStudio } from "./StudioProvider";
 import { Field, MiniBtn, Sheet, Spinner } from "./ui";
 
 interface GenResult {
@@ -21,6 +21,8 @@ interface GenResult {
   dataUrl: string;
   width: number;
   height: number;
+  bytes: number;
+  savedToLibrary: boolean;
 }
 interface CopyVariant {
   headline: string;
@@ -84,6 +86,10 @@ export function GenerateSheet({ open, onClose }: { open: boolean; onClose: () =>
     setBusy(true);
     setResults([]);
     try {
+      // Serverless request bodies cap at ~4.5 MB and the model only needs the
+      // reference for composition, so send a 1024px version rather than the
+      // full creative.
+      const reference = useReference && st.src ? await shrinkImage(st.src, 1024) : null;
       const res = await fetch("/api/generate", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -98,7 +104,7 @@ export function GenerateSheet({ open, onClose }: { open: boolean; onClose: () =>
           headline: d.head,
           cta: d.cta,
           hasReference: useReference,
-          reference: useReference ? st.src : null,
+          reference,
           count,
           quality,
         }),
@@ -107,7 +113,11 @@ export function GenerateSheet({ open, onClose }: { open: boolean; onClose: () =>
       if (!res.ok) throw new Error(j.error ?? "Generation failed.");
       setResults(j.results ?? []);
       setPrompt(j.prompt ?? null);
-      st.say(`${j.results.length} ${j.results.length === 1 ? "image" : "images"} generated`);
+      const saved = (j.results ?? []).every((x: GenResult) => x.savedToLibrary);
+      st.say(
+        `${j.results.length} ${j.results.length === 1 ? "image" : "images"} generated` +
+          (saved ? " and saved to the library" : " — but not saved to the library")
+      );
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Generation failed.");
     } finally {
@@ -116,9 +126,7 @@ export function GenerateSheet({ open, onClose }: { open: boolean; onClose: () =>
   }
 
   function use(r: GenResult) {
-    // base64 length × 0.75 is the byte count; close enough for the size check
-    const bytes = Math.round((r.dataUrl.length - r.dataUrl.indexOf(",") - 1) * 0.75);
-    st.loadCreative(r.dataUrl, `${typeId}-${shape.id}-${r.width}x${r.height}.png`, bytes);
+    st.loadCreative(r.dataUrl, `${typeId}-${shape.id}-${r.width}x${r.height}.png`, r.bytes);
     onClose();
   }
 
@@ -298,6 +306,7 @@ export function GenerateSheet({ open, onClose }: { open: boolean; onClose: () =>
                   </div>
                   <div className="ex-name">
                     {r.width} × {r.height} · {r.id}
+                    {r.savedToLibrary ? " · saved" : " · not saved"}
                   </div>
                   <button className="btn primary" onClick={() => use(r)} type="button">
                     Use this creative

@@ -13,7 +13,7 @@ import type { Lang } from "@/lib/core";
 import { copySystemPrompt, copyUserPrompt, type CopyBrief } from "@/lib/prompt";
 
 export const runtime = "nodejs";
-export const maxDuration = 120;
+export const maxDuration = 60;
 
 export interface CopyVariant {
   headline: string;

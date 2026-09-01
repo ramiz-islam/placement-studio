@@ -198,6 +198,15 @@ export function layout(pl: Placement, d: Design, logoAspect = 0.3): LayoutResult
   };
 }
 
+/** The plate behind the logo, in placement pixels. */
+export function logoScrimBox(pl: Placement, L: LayoutResult, d: Design) {
+  const w = L.logo.w * pl.w;
+  const h = L.logo.h * pl.h;
+  const pad = (w * d.logoScrimPad) / 100;
+  const shorter = Math.min(w + pad * 2, h + pad * 2);
+  return { pad, radius: (shorter * clamp(d.logoScrimRadius, 0, 50)) / 100 };
+}
+
 /** The scrim rectangle behind the copy block, in placement pixels. */
 export function scrimBox(L: LayoutResult, d: Design) {
   const padX = (L.head.headPx * d.scrimPad) / 100;

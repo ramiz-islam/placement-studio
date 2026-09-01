@@ -10,7 +10,7 @@
 
 import { useRef } from "react";
 import { isRTL, type Design, type LayerKey, type Placement } from "@/lib/core";
-import { clamp, intrusion, layersFor, layout, rgba, safeF, scrimBox } from "@/lib/geometry";
+import { clamp, intrusion, layersFor, layout, logoScrimBox, rgba, safeF, scrimBox } from "@/lib/geometry";
 import type { Collision } from "@/lib/analysis";
 import { Chrome } from "./Chrome";
 
@@ -59,6 +59,7 @@ export function Device(props: DeviceProps) {
   const cq = (px: number) => `${((px / pl.w) * 100).toFixed(3)}cqw`;
   const rtl = isRTL(d.lang);
   const SB = scrimBox(L, d);
+  const LSB = logoScrimBox(pl, L, d);
 
   function startDrag(key: LayerKey, ev: React.PointerEvent<HTMLDivElement>) {
     if (small || !onLayerMove) return;
@@ -136,6 +137,17 @@ export function Device(props: DeviceProps) {
           style={{ left: pc(L.logo.x), top: pc(L.logo.y), width: pc(L.logo.w) }}
           onPointerDown={e => startDrag("logo", e)}
         >
+          {d.logoScrim ? (
+            <span
+              className="scrim-bg"
+              aria-hidden="true"
+              style={{
+                inset: `-${cq(LSB.pad)}`,
+                background: rgba(d.logoScrimColor, d.logoScrimOpacity),
+                borderRadius: cq(LSB.radius),
+              }}
+            />
+          ) : null}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={logoSrc} alt="Brand logo" />
         </div>

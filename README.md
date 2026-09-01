@@ -26,7 +26,7 @@ The preview, safe-zone checks, drag-and-drop layout and export all work with **n
 npm run dev
 ```
 
-Then open http://localhost:3140.
+Then open http://localhost:3210.
 
 ---
 
@@ -37,10 +37,11 @@ Then open http://localhost:3140.
 - **23 placements, 9 channels** — Snapchat (single, collection, commercial), TikTok (in-feed, spark), Instagram (reels, stories, feed 4:5), Facebook (reels, stories, feed 4:5), YouTube Shorts, Google (Demand Gen 4:5 and 1.91:1, Display 1:1, App Campaign), Pinterest (standard pin, idea pin), X (1.91:1, 1:1), LinkedIn (1.91:1, 1:1, 4:5).
 - **Reserved bands drawn over the creative**, measured in real pixels against each placement's own canvas.
 - **Collision detection.** The creative is composed into each placement exactly as the feed would crop it, then scored cell by cell for local edge energy. Cells that are unusually detailed *relative to the rest of the frame* get flagged where they land in a reserved band. This measures detail density, not glyphs — the UI says so everywhere.
-- **Draggable headline, CTA and logo**, with live pixel readout and per-layer intrusion checks. Two snap targets: this placement's safe box, or the master zone.
+- **Draggable headline, CTA and logo** — positions are per placement, so a drag on TikTok never moves Snapchat. Live pixel readout, per-layer intrusion checks, and explicit ways to push a layout everywhere.
+- **Independent sizes** for headline, brand line and CTA, plus a styleable scrim behind the copy and a separate plate behind the logo (colour, opacity, padding, corner radius).
 - **Master safe zone** — the intersection of every reserved band across a ratio group. For 9:16 that is **876 × 970**, with Snapchat Collection Ad setting the floor at 700px of bottom furniture.
 - **Audit and score per placement** — ratio and crop loss, resolution, file size, band collisions, focal point, per-layer overlap, WCAG contrast measured against the real pixels underneath, RTL-versus-icon-rail conflicts, and platform re-crop exposure.
-- **Export** at native placement resolution, 0.5×/1×/2×, PNG or JPEG, with an optional safe-zone-guide burn-in for design briefs.
+- **Export** at native placement resolution (0.5× to 3×), PNG / JPEG / WebP, with a per-placement quality search that lands each file just under that platform's size cap, an upscale warning when the source has to stretch, a file-size badge per image, and an optional safe-zone-guide burn-in for briefs.
 - **Brand kit** asked once, saved to `localStorage`, applied to every creative after that.
 
 ### Phase 2 — generation
@@ -56,7 +57,7 @@ Two decisions worth knowing about:
 
 **Ad remake** posts the loaded creative as a reference and uses the images *edit* endpoint, so the rebuild keeps the original's composition and can be A/B tested against it.
 
-Every generation is saved to `.data/generated` (gitignored) with the exact prompt, and appears as a strip of earlier work you can reload.
+Every generation is saved automatically with the exact prompt that made it and appears in **Library** — reload any of them onto the stage, read the prompt back, or delete it. Storage picks itself: `.data/generated` on disk locally, Vercel Blob in production (see DEPLOY.md).
 
 **Words** (Claude)
 
@@ -82,7 +83,8 @@ lib/
   audit.ts              the per-placement checks and score
   render.ts             canvas exporter at native resolution
   prompt.ts             brand voice + both prompt builders
-  library.ts            .data/generated read/write
+  library.ts            generation store — fs locally, Vercel Blob in production
+middleware.ts           password gate for deployed instances
 components/
   StudioProvider.tsx    one state object, one patch function
   Device.tsx            a placement frame: media, chrome, layers, bands, drag
@@ -90,7 +92,8 @@ components/
   Stage.tsx             chips, focus view, grid view, synthetic samples
   LeftRail.tsx          creative, fit, copy, colours, logo
   AuditPanel.tsx        score, checks, master zone, spec sheet, best practice
-  ExportSheet.tsx       placement picker, resolution, save/copy
+  ExportSheet.tsx       placement picker, resolution, quality search, save/copy
+  LibrarySheet.tsx      every generation, its prompt, reload and delete
   GenerateSheet.tsx     Phase 2 — Picture and Words
   BrandKitSheet.tsx     the once-only kit
 ```
@@ -109,7 +112,8 @@ The safe-zone numbers are published ad-spec values. Platforms revise their UI si
 
 ## Notes
 
-- `next dev` runs on port 3140 to stay clear of the SEO platform.
+- `next dev` runs on port 3210 to stay clear of the SEO platform.
 - `.data/` and `.env.local` are gitignored. Nothing here writes to `public/`.
 - The exporter uses the browser's canvas, so export needs no server and no keys.
-- Not deployed anywhere yet. On a read-only host (Vercel), `.data/generated` writes fail silently and generation still returns the image — the library strip is the only thing that stops working.
+- Deployment is documented in [DEPLOY.md](DEPLOY.md). A deployed instance refuses every request unless `SITE_PASSWORD` is set — this app holds API keys and spends money per generation, so it must not be publicly reachable.
+- Never run `next build` while `next dev` is live: the production output overwrites `.next` and the dev server 500s until you delete `.next` and restart.

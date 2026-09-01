@@ -98,6 +98,14 @@ export interface Design {
   scrimOpacity: number;
   /** padding around the copy block, as a percentage of headline size */
   scrimPad: number;
+  /** the logo gets its own plate — a logo often needs one where the copy does not */
+  logoScrim: boolean;
+  logoScrimColor: string;
+  logoScrimOpacity: number;
+  /** padding around the logo, as a percentage of logo width */
+  logoScrimPad: number;
+  /** corner radius as a percentage of the plate's shorter side; 50 = pill/circle */
+  logoScrimRadius: number;
   /** the default position, used by any placement without its own */
   layers: Layers;
   /**
@@ -131,6 +139,11 @@ export const DESIGN_DEFAULTS: Omit<
   scrimColor: "#07080E",
   scrimOpacity: 50,
   scrimPad: 50,
+  logoScrim: false,
+  logoScrimColor: "#FFFFFF",
+  logoScrimOpacity: 100,
+  logoScrimPad: 14,
+  logoScrimRadius: 22,
   layers: {
     head: { x: 0.08, y: 0.36 },
     cta: { x: 0.08, y: 0.56 },

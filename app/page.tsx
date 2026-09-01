@@ -9,6 +9,7 @@ import { AuditPanel } from "@/components/AuditPanel";
 import { ExportSheet } from "@/components/ExportSheet";
 import { BrandKitSheet } from "@/components/BrandKitSheet";
 import { GenerateSheet } from "@/components/GenerateSheet";
+import { LibrarySheet } from "@/components/LibrarySheet";
 import { KIT_KEY } from "@/lib/core";
 
 export default function Page() {
@@ -22,7 +23,7 @@ export default function Page() {
 
 function Studio() {
   const st = useStudio();
-  const [sheet, setSheet] = useState<null | "export" | "kit" | "gen">(null);
+  const [sheet, setSheet] = useState<null | "export" | "kit" | "gen" | "lib">(null);
   const [firstRun, setFirstRun] = useState(false);
 
   // Ask for the brand kit once, then never again.
@@ -106,6 +107,9 @@ function Studio() {
         <button className="btn lime" onClick={() => setSheet("gen")} type="button">
           Generate
         </button>
+        <button className="btn" onClick={() => setSheet("lib")} type="button">
+          Library
+        </button>
         <button className="btn" onClick={() => setSheet("kit")} type="button">
           Brand kit
         </button>
@@ -133,6 +137,7 @@ function Studio() {
         }}
       />
       <GenerateSheet open={sheet === "gen"} onClose={() => setSheet(null)} />
+      <LibrarySheet open={sheet === "lib"} onClose={() => setSheet(null)} />
 
       <div className={`toast${st.toast ? " on" : ""}`}>{st.toast}</div>
     </>

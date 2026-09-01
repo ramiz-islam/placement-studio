@@ -434,3 +434,10 @@ textarea[dir=rtl]{text-align:right}
   margin:0;font-size:11.5px;color:var(--muted-deep);line-height:1.45;text-align:center;text-wrap:pretty;max-width:460px;
 }
 .pos-note b{font-weight:700}
+
+/* export/library result metadata */
+.ex-meta{display:flex;flex-wrap:wrap;gap:4px 10px;font-family:var(--f-mono);font-size:10.5px;color:var(--muted)}
+.ex-meta .ok{color:var(--lime)}
+.ex-meta .over{color:var(--coral-soft)}
+.ex-flag{font-size:11px;color:#FFD5D4;background:var(--coral-ghost);border:1px solid #5A2A2C;border-radius:var(--r-s);padding:6px 8px;line-height:1.4}
+.lib-brief{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
