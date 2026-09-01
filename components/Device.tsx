@@ -93,6 +93,8 @@ export interface DeviceProps {
   /** draw the rounded phone shell; off means the exact ad frame */
   framed?: boolean;
   selectedIds?: string[];
+  /** told when a repeat click stepped down to a layer underneath */
+  onReachedUnder?: (layerId: string) => void;
   /** additive = ctrl/cmd or alt held, meaning add to or cycle the selection */
   onSelect?: (layerId: string, additive: boolean) => void;
   onLayerMove?: (placementId: string, layerId: string, x: number, y: number) => void;
@@ -121,6 +123,7 @@ export function Device(props: DeviceProps) {
     small,
     framed,
     selectedIds,
+    onReachedUnder,
     onSelect,
     onLayerMove,
     onLayerResize,
@@ -129,35 +132,81 @@ export function Device(props: DeviceProps) {
   } = props;
 
   const deviceRef = useRef<HTMLDivElement>(null);
+
   const f = safeF(pl);
   const cq = (px: number) => `${((px / pl.w) * 100).toFixed(3)}cqw`;
   const placed = d.copyOn ? placeAll(pl, d, ctx) : [];
 
   const isSelected = (id: string) => Boolean(selectedIds?.includes(id));
 
-  function startDrag(layerId: string, ev: React.PointerEvent<HTMLDivElement>) {
-    // alt-click walks down through whatever is stacked under the pointer, which
-    // is the only sane way to reach a layer buried beneath another
-    const additive = ev.ctrlKey || ev.metaKey || ev.altKey;
+  /** Every layer sitting under the pointer, topmost first. */
+  function stackUnder(ev: React.PointerEvent<HTMLDivElement>): string[] {
+    const device = deviceRef.current;
+    if (!device) return [];
+    return (document.elementsFromPoint(ev.clientX, ev.clientY) as HTMLElement[])
+      .filter(el => device.contains(el) && el.dataset && el.dataset.layer)
+      .map(el => el.dataset.layer as string);
+  }
+
+  /**
+   * Selecting and dragging, when layers are stacked.
+   *
+   * A click lands on the topmost layer, which made a shape behind a logo
+   * unreachable — the logo took every click. The rule now:
+   *
+   *  - press on a layer that is already selected and it stays selected, so the
+   *    press can become a drag of the thing you just reached;
+   *  - release without having moved and the selection steps to the next layer
+   *    down, wrapping round at the bottom;
+   *  - otherwise you get the topmost layer, as expected.
+   *
+   * Deciding on release rather than on a double-click timer matters: a re-render
+   * between two clicks can eat several hundred milliseconds, and a timing
+   * window that the app's own frame rate can miss is not a rule anyone can
+   * rely on.
+   */
+  function startDrag(clickedId: string, ev: React.PointerEvent<HTMLDivElement>) {
+    const additive = ev.ctrlKey || ev.metaKey;
     // the frame deselects on pointerdown; a layer click must not reach it
     ev.stopPropagation();
+    const stack = small || additive ? [] : stackUnder(ev);
+    const primary = selectedIds?.length ? selectedIds[selectedIds.length - 1] : null;
+    const held = primary && stack.indexOf(primary) !== -1 ? primary : null;
+    const layerId = additive ? clickedId : (held ?? clickedId);
+    // a click that lands on what is already selected can step deeper on release
+    const cycleTo = held && stack.length > 1 ? stack[(stack.indexOf(held) + 1) % stack.length] : null;
     onSelect?.(layerId, additive);
     if (ev.altKey) {
       ev.preventDefault();
+      if (cycleTo) {
+        onSelect?.(cycleTo, false);
+        onReachedUnder?.(cycleTo);
+      }
       return;
     }
     if (small || !onLayerMove) return;
     ev.preventDefault();
-    const el = ev.currentTarget;
     const device = deviceRef.current;
     if (!device) return;
+    // the drag follows the layer we resolved to, which may sit under the pointer
+    const el =
+      layerId === clickedId
+        ? (ev.currentTarget as HTMLElement)
+        : device.querySelector<HTMLElement>(`[data-layer="${layerId}"]`) ?? (ev.currentTarget as HTMLElement);
     const rect = device.getBoundingClientRect();
     const layer = d.layers.find(l => l.id === layerId);
     if (!layer) return;
     const from = posFor(d, pl.id, layer);
     const start = { px: ev.clientX, py: ev.clientY, x: from.x, y: from.y };
     const isBand = layer.kind === "shape" && layer.shape === "band";
-    el.setPointerCapture(ev.pointerId);
+    // The drag may act on a layer under the pointer, so capture on the event's
+    // own element and listen on the window. Capturing on the moved element
+    // instead only works when it happens to be the one clicked.
+    try {
+      (ev.currentTarget as HTMLElement).setPointerCapture(ev.pointerId);
+    } catch {
+      // no active pointer to capture (synthetic events); window listeners cope
+    }
     el.classList.add("grabbing");
 
     const read = document.createElement("div");
@@ -194,21 +243,27 @@ export function Device(props: DeviceProps) {
       el.classList.toggle("bad-zone", !isBand && intrusion(pl, { x, y, ...box }).worst > 4);
     };
     const up = (e: PointerEvent) => {
-      el.releasePointerCapture(ev.pointerId);
-      el.removeEventListener("pointermove", move);
-      el.removeEventListener("pointerup", up);
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
       el.classList.remove("grabbing");
       read.remove();
       const { x, y } = at(e);
       // a click that never moved is a selection, not a drag: committing it would
       // silently give this layer a per-placement override it never asked for
       const moved = Math.hypot(e.clientX - start.px, e.clientY - start.py) > 2;
-      if (!moved) return;
+      if (!moved) {
+        // a press that never travelled is a click: step to the layer underneath
+        if (cycleTo) {
+          onSelect?.(cycleTo, false);
+          onReachedUnder?.(cycleTo);
+        }
+        return;
+      }
       if (others.length) onSelectionMove?.(pl.id, x - start.x, y - start.y, layerId);
       onLayerMove(pl.id, layerId, x, y);
     };
-    el.addEventListener("pointermove", move);
-    el.addEventListener("pointerup", up);
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
   }
 
 
@@ -217,6 +272,10 @@ export function Device(props: DeviceProps) {
    * audit updates while you drag; the store coalesces the stream into one undo
    * step.
    */
+  function round1(n: number) {
+    return Math.round(n * 10) / 10;
+  }
+
   function startResize(layer: Layer, edge: "e" | "s" | "se", ev: React.PointerEvent<HTMLSpanElement>) {
     if (small || !onLayerResize) return;
     ev.preventDefault();
@@ -251,7 +310,7 @@ export function Device(props: DeviceProps) {
           dim === "size"
             ? startVals.size * (1 + dx / Math.max(40, rect.width * 0.25))
             : startVals[dim] + (dx / rect.width) * 100;
-        patch[dim] = clamp(next, DIM_RANGE[dim][0], DIM_RANGE[dim][1]);
+        patch[dim] = round1(clamp(next, DIM_RANGE[dim][0], DIM_RANGE[dim][1]));
       }
       if (wantHeight && spec.height) {
         const dim = spec.height;
@@ -259,7 +318,7 @@ export function Device(props: DeviceProps) {
           dim === "size"
             ? startVals.size * (1 + dy / Math.max(20, startH))
             : startVals[dim] + (dy / rect.height) * 100;
-        patch[dim] = clamp(next, DIM_RANGE[dim][0], DIM_RANGE[dim][1]);
+        patch[dim] = round1(clamp(next, DIM_RANGE[dim][0], DIM_RANGE[dim][1]));
       }
       if (Object.keys(patch).length) onLayerResize!(layer.id, patch as Partial<Layer>);
     };

@@ -181,7 +181,11 @@ function describePatch(p: LayerPatch): string {
   if (p.pos) bits.push("moved");
   if (p.w !== undefined || p.h !== undefined || p.size !== undefined || p.blockW !== undefined) bits.push("resized");
   if (p.rotation !== undefined) bits.push("rotated");
-  const words = bits.length ? bits.join(" and ") : "adjusted";
+  const words = bits.length
+    ? bits.length > 1
+      ? `${bits.slice(0, -1).join(", ")} and ${bits[bits.length - 1]}`
+      : bits[0]
+    : "adjusted";
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 

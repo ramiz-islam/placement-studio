@@ -59,6 +59,10 @@ export function Stage({ onGenerate }: { onGenerate: () => void }) {
     selectedIds: st.selectedIds,
     onSelect: st.select,
     onDeselect: () => st.select(null),
+    onReachedUnder: (id: string) => {
+      const l = st.design.layers.find(x => x.id === id);
+      if (l) st.say(`${l.name} — the layer underneath. Click again for the next one down.`);
+    },
   };
 
   return (
@@ -306,8 +310,8 @@ function FocusView({
           Busy artwork in a reserved band
         </span>
         <span>
-          Drag to move · edge handles to resize · <b>alt-click</b> to reach a layer underneath · <b>ctrl-click</b> to
-          select several · arrow keys to nudge · click the artwork to deselect
+          Drag to move · edge handles to resize · <b>click again</b> on stacked layers to reach the one underneath ·{" "}
+          <b>ctrl-click</b> to select several · arrow keys to nudge · click any empty part of the frame to deselect
         </span>
       </div>
     </div>
