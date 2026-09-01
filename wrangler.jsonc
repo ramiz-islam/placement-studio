@@ -1,23 +1,31 @@
 {
-  "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "placement-studio",
-  "main": ".open-next/worker.js",
-  "compatibility_date": "2026-06-01",
-  // nodejs_compat is required: the Anthropic and OpenAI SDKs and Buffer need it
-  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
-  "assets": {
-    "directory": ".open-next/assets",
-    "binding": "ASSETS"
-  },
-  "observability": {
-    "enabled": true
-  },
-  // Workers have no filesystem, so the generation library lives in R2.
-  // Create it once:  npx wrangler r2 bucket create placement-studio-generations
-  "r2_buckets": [
-    {
-      "binding": "GENERATIONS",
-      "bucket_name": "placement-studio-generations"
-    }
-  ]
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "placement-studio",
+	"main": ".open-next/worker.js",
+	"compatibility_date": "2026-06-01",
+	// nodejs_compat is required: the Anthropic and OpenAI SDKs and Buffer need it
+	"compatibility_flags": [
+		"nodejs_compat",
+		"global_fetch_strictly_public"
+	],
+	"assets": {
+		"directory": ".open-next/assets",
+		"binding": "ASSETS"
+	},
+	"observability": {
+		"enabled": true
+	},
+	// Workers have no filesystem, so the generation library lives in R2.
+	// Create it once:  npx wrangler r2 bucket create placement-studio-generations
+	"r2_buckets": [
+		{
+			"binding": "GENERATIONS",
+			"bucket_name": "placement-studio-generations"
+		},
+		{
+			"bucket_name": "placement-studio-generations",
+			"binding": "placement_studio_generations",
+			"remote": true
+		}
+	]
 }

@@ -83,17 +83,30 @@ To try it on the real Workers runtime locally before or after deploying:
 npm run cf:preview
 ```
 
-### Connecting it to GitHub for automatic deploys
+### Connecting it to GitHub for automatic deploys (optional)
 
-In the Cloudflare dashboard: **Workers & Pages → Create → Workers → Connect to Git**, pick the repo, and set:
+Entirely optional — `npm run cf:deploy` already ships. This only makes pushes deploy themselves.
+
+**Connect Git to the Worker that already exists.** Do not create a new project: the "Create" flow leads to Cloudflare
+**Pages**, a different product that has no deploy-command field and no Workers bindings, and it would stand up a
+second empty deployment at `*.pages.dev` with no R2 and no secrets.
+
+Dashboard path:
+
+**Workers & Pages → `placement-studio` → Settings → Builds → Connect**
+
+Then in the prompts:
 
 | Setting | Value |
 |---|---|
+| Repository | `ramiz-islam/placement-studio` |
+| Production branch | `main` |
 | Build command | `npm run cf:build` |
 | Deploy command | `npx wrangler deploy` |
 | Root directory | *(leave blank)* |
 
-Add the same three secrets as environment variables in the dashboard, and bind the R2 bucket (`GENERATIONS` → `placement-studio-generations`) under the Worker's settings. After that, every push to `main` deploys.
+**Nothing needs re-entering.** Secrets live on the Worker, which is why redeploys have not needed them re-set, and the
+R2 binding comes from `wrangler.jsonc` on every deploy. Connecting Git adds CI; it does not replace the Worker.
 
 ---
 
