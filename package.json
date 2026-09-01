@@ -1,6 +1,6 @@
 {
   "name": "placement-studio",
-  "version": "0.2.0",
+  "version": "0.8.0",
   "private": true,
   "description": "Preview ad creative inside every channel's feed chrome, check safe zones, and generate statics from a single prompt.",
   "scripts": {
