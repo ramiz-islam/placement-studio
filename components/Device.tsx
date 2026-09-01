@@ -554,6 +554,7 @@ export function Device(props: DeviceProps) {
   return (
     <div
       ref={deviceRef}
+      data-placement={pl.id}
       className={`device${small ? " grid-card" : " dragmode"}${framed ? " framed" : ""}`}
       style={{ width, aspectRatio: `${pl.w}/${pl.h}` }}
     >

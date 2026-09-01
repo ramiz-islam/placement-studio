@@ -12,8 +12,8 @@
 import { useRef } from "react";
 import { FONTS } from "@/lib/core";
 import { ICONS, type CtaLayer, type Fill, type IconLayer, type Layer, type LogoLayer, type ShapeLayer, type TextLayer } from "@/lib/layers";
-import { plainText, toggleWord, wordFlags } from "@/lib/geometry";
-import type { Align } from "@/lib/layers";
+import { plainText, resolveLayer, toggleWord, wordFlags } from "@/lib/geometry";
+import type { Align, LayerPatch } from "@/lib/layers";
 import { shrinkImage, useStudio } from "./StudioProvider";
 import { ColorField, Collapsible, Field, MiniBtn } from "./ui";
 
@@ -78,6 +78,13 @@ export function LayersPanel() {
                 {KIND_ICON[l.kind]}
               </span>
               <span className="ln-name">{l.name}</span>
+              {st.layerPatch(l.id) ? (
+                <span
+                  className="local-dot"
+                  title={`Adjusted on ${st.placement.plat} ${st.placement.name} only — other channels use the shared layout`}
+                  aria-label="adjusted on this placement only"
+                />
+              ) : null}
               <button
                 className="row-btn"
                 title={l.on ? "Hide layer" : "Show layer"}
@@ -158,9 +165,29 @@ export function LayersPanel() {
    INSPECTOR
    ============================================================ */
 
+/** Put a per-placement patch into words, so the badge tells you what changed. */
+function describePatch(p: LayerPatch): string {
+  const bits: string[] = [];
+  if (p.pos) bits.push("moved");
+  if (p.w !== undefined || p.h !== undefined || p.size !== undefined || p.blockW !== undefined) bits.push("resized");
+  if (p.rotation !== undefined) bits.push("rotated");
+  const words = bits.length ? bits.join(" and ") : "adjusted";
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
 function Inspector({ layer }: { layer: Layer }) {
   const st = useStudio();
+  const patch = st.layerPatch(layer.id);
   const set = (p: Partial<Layer>) => st.updateLayer(layer.id, p);
+  /**
+   * Size, position and angle are per placement, whether you change them on the
+   * frame or in here. A 9:16 story and a 1:1 feed post genuinely need different
+   * geometry, and having one slider be global while the matching drag handle was
+   * local was the single most confusing thing in this panel.
+   */
+  const geo = (p: LayerPatch) => st.resizeLayer(layer.id, p);
+  // sliders must read the value in force *here*, not the shared baseline
+  const rl = resolveLayer(st.design, st.placement.id, layer);
 
   return (
     <div className="panel">
@@ -183,20 +210,44 @@ function Inspector({ layer }: { layer: Layer }) {
         <MiniBtn onClick={() => st.toFront(layer.id)}>Bring to front</MiniBtn>
       </div>
 
+      {patch ? (
+        <div className="scope-note local">
+          <b>
+            {describePatch(patch)} for {st.placement.plat} {st.placement.name}.
+          </b>{" "}
+          Every other channel still uses the shared size and position.
+          <div className="link-row">
+            <button className="link-btn" onClick={() => st.resetLayerHere(layer.id)} type="button">
+              Put it back
+            </button>
+            <button className="link-btn" onClick={st.applyToAll} type="button">
+              Use this everywhere
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="scope-note">
+          <b>Size, position and angle</b> change {st.placement.plat} {st.placement.name} only.{" "}
+          <b>Text, colour and font</b> change every channel.
+        </div>
+      )}
+
       <Field label="Layer name">
         <input type="text" value={layer.name} onChange={e => set({ name: e.target.value } as Partial<Layer>)} />
       </Field>
 
-      {layer.kind === "text" ? <TextInspector l={layer} set={set} /> : null}
-      {layer.kind === "cta" ? <CtaInspector l={layer} set={set} /> : null}
-      {layer.kind === "logo" ? <LogoInspector l={layer} set={set} /> : null}
-      {layer.kind === "shape" ? <ShapeInspector l={layer} set={set} /> : null}
-      {layer.kind === "icon" ? <IconInspector l={layer} set={set} /> : null}
+      {layer.kind === "text" ? <TextInspector l={rl as TextLayer} set={set} geo={geo} /> : null}
+      {layer.kind === "cta" ? <CtaInspector l={rl as CtaLayer} set={set} geo={geo} /> : null}
+      {layer.kind === "logo" ? <LogoInspector l={rl as LogoLayer} set={set} geo={geo} /> : null}
+      {layer.kind === "shape" ? <ShapeInspector l={rl as ShapeLayer} set={set} geo={geo} /> : null}
+      {layer.kind === "icon" ? <IconInspector l={rl as IconLayer} set={set} geo={geo} /> : null}
     </div>
   );
 }
 
 type Set = (p: Partial<Layer>) => void;
+/** writes a per-placement geometry patch */
+type Geo = (p: LayerPatch) => void;
 
 /** Colour / gradient / opacity for any Fill. */
 function FillFields({ label, fill, onChange }: { label: string; fill: Fill; onChange: (f: Fill) => void }) {
@@ -240,7 +291,7 @@ function FillFields({ label, fill, onChange }: { label: string; fill: Fill; onCh
   );
 }
 
-function TextInspector({ l, set }: { l: TextLayer; set: Set }) {
+function TextInspector({ l, set, geo }: { l: TextLayer; set: Set; geo: Geo }) {
   const st = useStudio();
   const rtl = st.design.lang !== "en";
   return (
@@ -281,7 +332,7 @@ function TextInspector({ l, set }: { l: TextLayer; set: Set }) {
           max={16}
           step={0.1}
           value={l.size}
-          onChange={e => set({ size: parseFloat(e.target.value) } as Partial<Layer>)}
+          onChange={e => geo({ size: parseFloat(e.target.value) })}
         />
       </Field>
       <ColorField label="Colour" value={l.color} onChange={hex => set({ color: hex } as Partial<Layer>)} />
@@ -314,7 +365,7 @@ function TextInspector({ l, set }: { l: TextLayer; set: Set }) {
             max={96}
             step={1}
             value={l.blockW}
-            onChange={e => set({ blockW: Number(e.target.value) } as Partial<Layer>)}
+            onChange={e => geo({ blockW: Number(e.target.value) })}
           />
         </Field>
         <Field label="Line height" hint={l.lineHeight == null ? "font default" : l.lineHeight.toFixed(2)}>
@@ -380,7 +431,7 @@ function TextInspector({ l, set }: { l: TextLayer; set: Set }) {
   );
 }
 
-function CtaInspector({ l, set }: { l: CtaLayer; set: Set }) {
+function CtaInspector({ l, set, geo }: { l: CtaLayer; set: Set; geo: Geo }) {
   return (
     <>
       <Field label="Label" hint={`${l.text.length} ch`}>
@@ -402,7 +453,7 @@ function CtaInspector({ l, set }: { l: CtaLayer; set: Set }) {
           max={9}
           step={0.1}
           value={l.size}
-          onChange={e => set({ size: parseFloat(e.target.value) } as Partial<Layer>)}
+          onChange={e => geo({ size: parseFloat(e.target.value) })}
         />
       </Field>
       <Field label="Corner radius" hint={l.radius >= 50 ? "pill" : `${l.radius}%`}>
@@ -421,7 +472,7 @@ function CtaInspector({ l, set }: { l: CtaLayer; set: Set }) {
   );
 }
 
-function LogoInspector({ l, set }: { l: LogoLayer; set: Set }) {
+function LogoInspector({ l, set, geo }: { l: LogoLayer; set: Set; geo: Geo }) {
   const st = useStudio();
   const fileRef = useRef<HTMLInputElement>(null);
   return (
@@ -475,7 +526,7 @@ function LogoInspector({ l, set }: { l: LogoLayer; set: Set }) {
           max={60}
           step={1}
           value={l.w}
-          onChange={e => set({ w: Number(e.target.value) } as Partial<Layer>)}
+          onChange={e => geo({ w: Number(e.target.value) })}
         />
       </Field>
 
@@ -536,7 +587,7 @@ function LogoInspector({ l, set }: { l: LogoLayer; set: Set }) {
   );
 }
 
-function ShapeInspector({ l, set }: { l: ShapeLayer; set: Set }) {
+function ShapeInspector({ l, set, geo }: { l: ShapeLayer; set: Set; geo: Geo }) {
   const shapeFileRef = useRef<HTMLInputElement>(null);
   return (
     <>
@@ -557,7 +608,7 @@ function ShapeInspector({ l, set }: { l: ShapeLayer; set: Set }) {
             max={100}
             step={1}
             value={l.w}
-            onChange={e => set({ w: Number(e.target.value) } as Partial<Layer>)}
+            onChange={e => geo({ w: Number(e.target.value) })}
           />
         </Field>
       ) : null}
@@ -568,7 +619,7 @@ function ShapeInspector({ l, set }: { l: ShapeLayer; set: Set }) {
           max={100}
           step={l.shape === "line" ? 0.2 : 1}
           value={l.h}
-          onChange={e => set({ h: parseFloat(e.target.value) } as Partial<Layer>)}
+          onChange={e => geo({ h: parseFloat(e.target.value) })}
         />
       </Field>
       <Collapsible title="Rotation" hint={`${l.rotation ?? 0}°`}>
@@ -580,12 +631,12 @@ function ShapeInspector({ l, set }: { l: ShapeLayer; set: Set }) {
             max={180}
             step={1}
             value={l.rotation ?? 0}
-            onChange={e => set({ rotation: Number(e.target.value) } as Partial<Layer>)}
+            onChange={e => geo({ rotation: Number(e.target.value) })}
           />
         </Field>
         <div className="row">
           {[0, 45, 90, 180].map(deg => (
-            <MiniBtn key={deg} on={(l.rotation ?? 0) === deg} onClick={() => set({ rotation: deg } as Partial<Layer>)}>
+            <MiniBtn key={deg} on={(l.rotation ?? 0) === deg} onClick={() => geo({ rotation: deg })}>
               {deg}°
             </MiniBtn>
           ))}
@@ -649,7 +700,7 @@ function ShapeInspector({ l, set }: { l: ShapeLayer; set: Set }) {
   );
 }
 
-function IconInspector({ l, set }: { l: IconLayer; set: Set }) {
+function IconInspector({ l, set, geo }: { l: IconLayer; set: Set; geo: Geo }) {
   const fileRef = useRef<HTMLInputElement>(null);
   return (
     <>
@@ -717,7 +768,7 @@ function IconInspector({ l, set }: { l: IconLayer; set: Set }) {
           max={40}
           step={1}
           value={l.w}
-          onChange={e => set({ w: Number(e.target.value) } as Partial<Layer>)}
+          onChange={e => geo({ w: Number(e.target.value) })}
         />
       </Field>
       <Field label="Rotation" hint={`${l.rotation ?? 0}°`}>
@@ -727,7 +778,7 @@ function IconInspector({ l, set }: { l: IconLayer; set: Set }) {
           max={180}
           step={1}
           value={l.rotation ?? 0}
-          onChange={e => set({ rotation: Number(e.target.value) } as Partial<Layer>)}
+          onChange={e => geo({ rotation: Number(e.target.value) })}
         />
       </Field>
       {!l.src ? <ColorField label="Colour" value={l.color} onChange={hex => set({ color: hex } as Partial<Layer>)} /> : null}

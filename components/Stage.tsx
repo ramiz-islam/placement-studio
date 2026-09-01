@@ -129,6 +129,7 @@ function FocusView({
   });
   const tall = pl.h / pl.w > 1.2;
   const custom = hasOverride(st.design, pl.id);
+  const localCount = Object.keys(st.design.overrides[pl.id] ?? {}).length;
 
   return (
     <div className="device-wrap">
@@ -229,7 +230,15 @@ function FocusView({
         ) : null}
       </div>
       <p className="pos-note">
-        <b>Panel edits apply to every channel. Dragging, resizing and rotating on the frame apply here only.</b>{" "}
+        <b>Size, position and angle are per channel. Text, colour and font apply to all of them.</b>{" "}
+        {localCount > 0 ? (
+          <>
+            <b style={{ color: "var(--blue-bright)" }}>
+              {localCount} {localCount === 1 ? "layer is" : "layers are"} adjusted just for {pl.plat} {pl.name}
+            </b>
+            {" — look for the dot in the layer list. "}
+          </>
+        ) : null}
         {hasFitOverride(st.design, pl.id) ? (
           <>
             <b style={{ color: "var(--blue-bright)" }}>

@@ -595,3 +595,14 @@ textarea[dir=rtl]{text-align:right}
   box-shadow:0 16px 40px -12px rgba(0,0,0,.85);
 }
 .menu .toggle,.menu .btn{width:100%;justify-content:flex-start;text-align:left}
+
+/* --- which scope am I editing in? ------------------------------------------
+   The one rule that confuses everyone: panel controls are global, frame
+   gestures are local. Rather than only writing it down, mark the layers that
+   have actually gone local so cause and effect are visible. */
+.local-dot{width:7px;height:7px;border-radius:50%;background:var(--blue-bright);
+  box-shadow:0 0 0 2px rgba(4,84,242,.22);flex:0 0 auto;margin-left:2px}
+.scope-note{font-size:11.5px;line-height:1.5;color:var(--muted);background:rgba(255,255,255,.03);
+  border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-bottom:12px}
+.scope-note.local{color:var(--ink);border-color:rgba(4,84,242,.5);background:rgba(4,84,242,.10)}
+.scope-note b{color:var(--blue-bright)}
