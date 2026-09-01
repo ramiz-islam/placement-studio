@@ -227,8 +227,15 @@ function FocusView({
       </div>
 
       <div className="snap-row">
-        <button className="btn" onClick={st.snapThis} type="button">
-          Snap into this safe box
+        {/* The one button worth reaching for first: it reads the artwork and
+            puts the copy and logo somewhere legible. */}
+        <button
+          className="btn lime"
+          onClick={st.autoPlaceHere}
+          title="Reads the artwork and moves the copy and logo to the quietest area inside the safe box"
+          type="button"
+        >
+          Place it for me
         </button>
 
         {/* This is the one control here that changes other channels, and it
@@ -259,8 +266,13 @@ function FocusView({
           </button>
         ) : null}
 
-        <button className="btn" onClick={st.snapAllToMaster} type="button">
-          Snap all to master zone
+        <button
+          className="btn"
+          onClick={st.autoPlaceEverywhere}
+          title="Works each placement out separately — the same artwork crops differently on each one"
+          type="button"
+        >
+          Place it for me on every channel
         </button>
         {custom ? (
           <button className="btn" onClick={st.resetThis} type="button">

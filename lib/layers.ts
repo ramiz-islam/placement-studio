@@ -102,6 +102,12 @@ export interface TextLayer extends Base {
   tracking: number;
   upper: boolean;
   scrim: Plate;
+  /**
+   * A gradient across the type, from `color` to `grad.to`. Off by default, and
+   * mutually exclusive with the two-tone word colouring: a per-word colour is
+   * invisible once the whole block is painted with one gradient.
+   */
+  grad: { on: boolean; to: string; angle: number };
 }
 
 export interface CtaLayer extends Base {
@@ -215,6 +221,7 @@ export function textLayer(d: NewLayerDefaults, over: Partial<TextLayer> = {}): T
     upper: false,
     align: "left",
     scrim: noPlate(),
+    grad: { on: false, to: d.color2, angle: 90 },
     ...over,
   };
 }
@@ -231,7 +238,8 @@ export function ctaLayer(d: NewLayerDefaults, over: Partial<CtaLayer> = {}): Cta
     size: 2.6,
     bg: solid(d.ctaBg),
     ink: d.ctaInk,
-    radius: 50,
+    // square by default: a pill reads as a mobile OS button rather than an ad
+    radius: 0,
     ...over,
   };
 }
@@ -308,8 +316,8 @@ export function defaultStack(d: NewLayerDefaults, brand: string, head: string, c
     textLayer(d, {
       name: "Brand line",
       text: brand,
-      size: 2.2,
-      tracking: 0.16,
+      size: 3.2,
+      tracking: 0.12,
       upper: true,
       pos: { x: 0.08, y: 0.36 },
     }),

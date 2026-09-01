@@ -351,7 +351,38 @@ function TextInspector({ l, set, geo }: { l: TextLayer; set: Set; geo: Geo }) {
       </Field>
       <ColorField label="Colour" value={l.color} onChange={hex => set({ color: hex } as Partial<Layer>)} />
 
-      <Collapsible title="Two-tone" hint="colour individual words">
+      <Collapsible title="Gradient" hint={l.grad?.on ? "on" : "off"}>
+        <div className="row" style={{ marginBottom: 10 }}>
+          <MiniBtn
+            on={l.grad?.on}
+            onClick={() => set({ grad: { ...l.grad, on: !l.grad?.on } } as Partial<Layer>)}
+          >
+            {l.grad?.on ? "Gradient on" : "Gradient off"}
+          </MiniBtn>
+        </div>
+        {l.grad?.on ? (
+          <div className="subpanel">
+            <p className="hint">Runs from the layer colour above to this one.</p>
+            <ColorField
+              label="Fade to"
+              value={l.grad.to}
+              onChange={hex => set({ grad: { ...l.grad, to: hex } } as Partial<Layer>)}
+            />
+            <Field label="Direction" hint={`${l.grad.angle}°`}>
+              <input
+                type="range"
+                min={0}
+                max={360}
+                step={5}
+                value={l.grad.angle}
+                onChange={e => set({ grad: { ...l.grad, angle: Number(e.target.value) } } as Partial<Layer>)}
+              />
+            </Field>
+          </div>
+        ) : null}
+      </Collapsible>
+
+      <Collapsible title="Two-tone" hint={l.grad?.on ? "off while the gradient is on" : "colour individual words"}>
         <Field label="Tap a word to flip it">
           <div className="word-pick" dir={st.design.lang !== "en" ? "rtl" : undefined}>
             {wordFlags(l.text).map((wf, i) => (

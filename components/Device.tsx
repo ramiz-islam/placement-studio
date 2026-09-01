@@ -589,6 +589,17 @@ export function Device(props: DeviceProps) {
               letterSpacing: l.tracking ? `${l.tracking}em` : undefined,
               textAlign: m.align,
               textShadow: "0 .3cqw 1.4cqw rgba(0,0,0,.28)",
+              // background-clip paints the glyphs with the gradient; the text
+              // has to go transparent for it to show through
+              ...(l.grad?.on
+                ? {
+                    backgroundImage: `linear-gradient(${l.grad.angle}deg, ${l.color}, ${l.grad.to})`,
+                    WebkitBackgroundClip: "text",
+                    backgroundClip: "text",
+                    color: "transparent",
+                    textShadow: "none",
+                  }
+                : null),
             }}
           >
             {l.scrim.on ? (
@@ -605,7 +616,7 @@ export function Device(props: DeviceProps) {
             {m.lines.map((line, li) => (
               <span className="ln" key={li}>
                 {line.map((t, ti) => (
-                  <span key={ti} style={t.accent ? { color: l.color2 } : undefined}>
+                  <span key={ti} style={t.accent && !l.grad?.on ? { color: l.color2 } : undefined}>
                     {t.text}
                     {ti < line.length - 1 ? " " : ""}
                   </span>

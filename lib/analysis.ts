@@ -167,6 +167,28 @@ export function focal(m: DetailMap) {
   return { x: (bx + 0.5) / m.cols, y: (by + 0.5) / m.rows };
 }
 
+/**
+ * How busy a rect is, relative to the whole frame. 1 means average detail, 2
+ * means twice as much as average, near 0 means flat. Layout uses this to find
+ * somewhere a headline or a logo can sit and still be read.
+ */
+export function busyOfRect(m: DetailMap, fx: number, fy: number, fw: number, fh: number): number {
+  const c0 = Math.max(0, Math.min(m.cols - 1, Math.floor(fx * m.cols)));
+  const c1 = Math.max(c0 + 1, Math.min(m.cols, Math.ceil((fx + fw) * m.cols)));
+  const r0 = Math.max(0, Math.min(m.rows - 1, Math.floor(fy * m.rows)));
+  const r1 = Math.max(r0 + 1, Math.min(m.rows, Math.ceil((fy + fh) * m.rows)));
+  let sum = 0;
+  let n = 0;
+  for (let r = r0; r < r1; r++) {
+    for (let c = c0; c < c1; c++) {
+      sum += m.cells[r * m.cols + c];
+      n++;
+    }
+  }
+  if (!n) return 1;
+  return m.mean > 0 ? sum / n / m.mean : 0;
+}
+
 /** Mean luma under a rect given in canvas fractions. */
 export function lumaOfRect(m: DetailMap, fx: number, fy: number, fw: number, fh: number): number {
   const x0 = Math.max(0, Math.min(m.w - 1, Math.floor(fx * m.w)));

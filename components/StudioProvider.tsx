@@ -38,12 +38,12 @@ import {
   type LayerPatch,
   type NewLayerDefaults,
 } from "@/lib/layers";
-import { clearAnalysisCache, samplePad } from "@/lib/analysis";
+import { clearAnalysisCache, detailMap, samplePad } from "@/lib/analysis";
+import { autoLayout } from "@/lib/autolayout";
 import {
   alignedPositions,
   clampPos,
   fitFor,
-  masterZone,
   patchFor,
   place,
   posFor,
@@ -138,8 +138,10 @@ export interface Studio extends StudioState {
   moveLayer: (placementId: string, layerId: string, x: number, y: number) => void;
   /** apply one delta to every selected layer except the one already moved */
   moveSelected: (placementId: string, dx: number, dy: number, exceptId?: string) => void;
-  snapThis: () => void;
-  snapAllToMaster: () => void;
+  /** place the copy and logo clear of the busiest artwork, here */
+  autoPlaceHere: () => void;
+  /** the same, worked out separately for every placement */
+  autoPlaceEverywhere: () => void;
   applyToAll: () => void;
   resetThis: () => void;
   /* ---- history ---- */
@@ -291,15 +293,39 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
       const img = new Image();
       img.onload = () => {
         clearAnalysisCache();
-        setS(prev => ({
-          ...prev,
-          img,
-          src,
-          meta: { name, bytes, w: img.naturalWidth, h: img.naturalHeight },
-          padColor: samplePad(img),
-          ver: prev.ver + 1,
-        }));
-        say(`Scored across ${PLACEMENTS.length} placements`);
+        setS(prev => {
+          const pad = samplePad(img);
+          const ver = prev.ver + 1;
+          // Look at the artwork before laying anything out. Dropping the copy
+          // on default coordinates puts a logo across whatever happens to be in
+          // the top-left corner, which on a selfie is usually a hand.
+          const overrides: Design["overrides"] = { ...prev.design.overrides };
+          const needPlate = new Set<string>();
+          try {
+            for (const pl of PLACEMENTS) {
+              const m = detailMap(pl, img, fitFor(prev.design, pl.id), pad, ver);
+              const { patches, plates } = autoLayout(pl, prev.design, safeF(pl), ctxOf(prev), m, pl.id);
+              overrides[pl.id] = { ...(overrides[pl.id] ?? {}), ...patches };
+              for (const id of plates) needPlate.add(id);
+            }
+          } catch {
+            // analysis needs a canvas; without one the default stack still works
+          }
+          return {
+            ...prev,
+            img,
+            src,
+            meta: { name, bytes, w: img.naturalWidth, h: img.naturalHeight },
+            padColor: pad,
+            ver,
+            design: {
+              ...prev.design,
+              layers: plateLayers(prev.design.layers, [...needPlate], true),
+              overrides,
+            },
+          };
+        });
+        say(`Read the artwork and placed the copy across ${PLACEMENTS.length} placements`);
       };
       img.onerror = () => say("That file could not be read as an image");
       img.src = src;
@@ -808,37 +834,84 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     logoAspect: st.logo ? st.logo.naturalHeight / st.logo.naturalWidth : 0.3,
   });
 
-  const snapThis = useCallback(() => {
-    setS(prev => {
-      const pl = PLACEMENTS.find(p => p.id === prev.active) ?? PLACEMENTS[0];
-      const next = stackInside(pl, prev.design, safeF(pl), ctxOf(prev));
-      return {
-        ...prev,
-        design: { ...prev.design, overrides: { ...prev.design.overrides, [pl.id]: next } },
-        past: [...prev.past, { design: prev.design, tag: "snapThis", at: Date.now() }].slice(-HISTORY_LIMIT),
-        future: [],
-      };
+  /**
+   * Switch a plate on behind layers the artwork is too busy for. Position alone
+   * cannot rescue a logo when every quiet spot is taken, and a soft dark plate
+   * is what a designer would reach for.
+   */
+  const plateLayers = (layers: Layer[], ids: string[], clearRest = false): Layer[] => {
+    if (!ids.length && !clearRest) return layers;
+    const set = new Set(ids);
+    const fill = { color: "#000000", color2: null, angle: 90, opacity: 42 };
+    return layers.map(l => {
+      const want = set.has(l.id);
+      if (!want) {
+        // Only a fresh creative clears these. A scrim the last picture needed is
+        // not one this picture needs, but a scrim the user switched on is theirs.
+        if (!clearRest || (l.kind !== "logo" && l.kind !== "text")) return l;
+        if (l.kind === "logo") return l.plate.on ? ({ ...l, plate: { ...l.plate, on: false } } as Layer) : l;
+        return l.scrim.on ? ({ ...l, scrim: { ...l.scrim, on: false } } as Layer) : l;
+      }
+      if (l.kind === "logo") return { ...l, plate: { on: true, fill, pad: 34, radius: 18 } } as Layer;
+      if (l.kind === "text") return { ...l, scrim: { on: true, fill, pad: 26, radius: 12 } } as Layer;
+      return l;
     });
-    say("Snapped into this placement's safe box");
-  }, [say]);
+  };
 
-  const snapAllToMaster = useCallback(() => {
-    setS(prev => {
-      const pl = PLACEMENTS.find(p => p.id === prev.active) ?? PLACEMENTS[0];
-      const next = stackInside(pl, prev.design, masterZone(pl, PLACEMENTS), ctxOf(prev));
-      return {
-        ...prev,
-        design: {
-          ...prev.design,
-          layers: prev.design.layers.map(l => (next[l.id] ? ({ ...l, ...next[l.id] } as Layer) : l)),
-          overrides: {},
+  /**
+   * Place the copy and the logo by looking at the artwork, not just at the
+   * platform's reserved bands.
+   *
+   * The old "snap into the safe box" only knew where the furniture was, so it
+   * would stack the logo over a face or a hand: legal, and unreadable. This
+   * scores candidate positions for detail density and tonal contrast and takes
+   * the quietest one that fits.
+   */
+  const autoPlaceHere = useCallback(() => {
+    if (!s.img) return;
+    const pl = PLACEMENTS.find(p => p.id === s.active) ?? PLACEMENTS[0];
+    const m = detailMap(pl, s.img, fitFor(s.design, pl.id), s.padColor, s.ver);
+    const { patches, plates, note } = autoLayout(pl, s.design, safeF(pl), ctxOf(s), m, pl.id);
+    setS(prev => ({
+      ...prev,
+      design: {
+        ...prev.design,
+        layers: plateLayers(prev.design.layers, plates),
+        overrides: {
+          ...prev.design.overrides,
+          [pl.id]: { ...(prev.design.overrides[pl.id] ?? {}), ...patches },
         },
-        past: [...prev.past, { design: prev.design, tag: "snapMaster", at: Date.now() }].slice(-HISTORY_LIMIT),
-        future: [],
-      };
-    });
-    say("Master layout applied to every placement");
-  }, [say]);
+      },
+      past: [...prev.past, { design: prev.design, tag: "autoPlace", at: Date.now() }].slice(-HISTORY_LIMIT),
+      future: [],
+    }));
+    say(note);
+  }, [s, say]);
+
+  /**
+   * The same, for every placement. Each one gets its own answer, because each
+   * one crops the artwork differently — what is sky on a 9:16 story can be a
+   * windscreen on a 16:9 pre-roll.
+   */
+  const autoPlaceEverywhere = useCallback(() => {
+    if (!s.img) return;
+    const img = s.img;
+    const overrides: Design["overrides"] = { ...s.design.overrides };
+    const needPlate = new Set<string>();
+    for (const pl of PLACEMENTS) {
+      const m = detailMap(pl, img, fitFor(s.design, pl.id), s.padColor, s.ver);
+      const { patches, plates } = autoLayout(pl, s.design, safeF(pl), ctxOf(s), m, pl.id);
+      overrides[pl.id] = { ...(overrides[pl.id] ?? {}), ...patches };
+      for (const id of plates) needPlate.add(id);
+    }
+    setS(prev => ({
+      ...prev,
+      design: { ...prev.design, layers: plateLayers(prev.design.layers, [...needPlate]), overrides },
+      past: [...prev.past, { design: prev.design, tag: "autoPlaceAll", at: Date.now() }].slice(-HISTORY_LIMIT),
+      future: [],
+    }));
+    say(`Placed clear of the artwork on all ${PLACEMENTS.length} placements`);
+  }, [s, say]);
 
   /**
    * Promote everything this placement has been adjusted by hand to the shared
@@ -940,8 +1013,8 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     canUngroup: s.design.layers.some(l => s.selectedIds.includes(l.id) && Boolean(l.group)),
     moveLayer,
     moveSelected,
-    snapThis,
-    snapAllToMaster,
+    autoPlaceHere,
+    autoPlaceEverywhere,
     applyToAll,
     resetThis,
     undo,

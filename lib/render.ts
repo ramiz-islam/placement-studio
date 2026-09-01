@@ -303,6 +303,12 @@ function drawLayer(
         g.fill();
       }
 
+      // one gradient across the whole text block, so it reads continuously
+      // rather than restarting on every word
+      const grad = l.grad?.on
+        ? paint(g, { color: l.color, color2: l.grad.to, angle: l.grad.angle, opacity: 100 }, x, y, w, h)
+        : null;
+
       g.font = `${m.weight} ${sizePx}px ${m.fontCss}`;
       g.textBaseline = "top";
       g.textAlign = "left";
@@ -318,7 +324,7 @@ function drawLayer(
         if (m.align === "center") tx = x + (w - lw) / 2;
         else if (m.align === "right") tx = x + w - lw;
         for (const t of scaled) {
-          g.fillStyle = t.accent ? l.color2 : l.color;
+          g.fillStyle = grad ?? (t.accent ? l.color2 : l.color);
           if (track) {
             // draw glyph by glyph so tracking matches the measured width
             let gx = tx;
