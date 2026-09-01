@@ -43,6 +43,14 @@ interface LibEntry {
   createdAt: string;
 }
 
+/** The headline is whichever text layer reads as the main line. */
+const headlineText = (d: { layers: { kind: string; on: boolean; text?: string }[] }) => {
+  const texts = d.layers.filter(l => l.kind === "text" && l.on && l.text?.trim());
+  return (texts[1]?.text ?? texts[0]?.text ?? "").replace(/[[\]]/g, "");
+};
+const ctaText = (d: { layers: { kind: string; on: boolean; text?: string }[] }) =>
+  d.layers.find(l => l.kind === "cta" && l.on)?.text ?? "";
+
 const hashId = (str: string) => {
   let h = 2166136261;
   for (let i = 0; i < str.length; i++) h = (h ^ str.charCodeAt(i)) * 16777619;
@@ -115,10 +123,10 @@ export function GenerateSheet({ open, onClose }: { open: boolean; onClose: () =>
           shapeId,
           market,
           brandName: st.kit.brand,
-          palette: { headColor: d.headColor, ctaBg: d.ctaBg, ctaInk: d.ctaInk },
+          palette: { headColor: st.kit.headColor, ctaBg: st.kit.ctaBg, ctaInk: st.kit.ctaInk },
           includeText,
-          headline: d.head,
-          cta: d.cta,
+          headline: headlineText(d),
+          cta: ctaText(d),
           hasReference: useReference,
           reference,
           count,
@@ -205,7 +213,7 @@ export function GenerateSheet({ open, onClose }: { open: boolean; onClose: () =>
           lang: copyLang,
           market,
           brandName: st.kit.brand,
-          source: d.head && copyLang !== d.lang ? `${d.head} / ${d.cta}` : undefined,
+          source: copyLang !== d.lang ? `${headlineText(d)} / ${ctaText(d)}` : undefined,
           count: 4,
           headlineMax: Number(st.placement.spec["Headline"]?.match(/\d+/)?.[0]) || undefined,
         }),
@@ -222,7 +230,11 @@ export function GenerateSheet({ open, onClose }: { open: boolean; onClose: () =>
 
   function applyVariant(v: CopyVariant) {
     st.setLang(copyLang);
-    st.patchDesign({ head: v.headline, cta: v.cta || d.cta });
+    const texts = d.layers.filter(l => l.kind === "text");
+    const target = texts[1] ?? texts[0];
+    if (target) st.updateLayer(target.id, { text: v.headline });
+    const cta = d.layers.find(l => l.kind === "cta");
+    if (cta && v.cta) st.updateLayer(cta.id, { text: v.cta });
     st.say("Copy applied — check it clears the safe box");
   }
 

@@ -1,11 +1,20 @@
 /**
- * Per-placement audit. Every check states what is wrong, where, and what to
- * do about it — a score alone is not actionable.
+ * Per-placement audit. Every check states what is wrong, where, and what to do
+ * about it — a score alone is not actionable.
  */
 
 import { isRTL, type CreativeMeta, type Design, type Fit, type Placement } from "./core";
 import { collision, detailMap, focal, lumaOfRect, type Collision } from "./analysis";
-import { RATIO_LABEL, clamp, contrastRatio, hexLuma, intrusion, layout, safeF } from "./geometry";
+import {
+  RATIO_LABEL,
+  clamp,
+  contrastRatio,
+  hexLuma,
+  intrusion,
+  placeAll,
+  safeF,
+  type LayoutContext,
+} from "./geometry";
 
 export type Level = "ok" | "warn" | "bad";
 export interface Check {
@@ -156,131 +165,116 @@ export function audit(input: AuditInput): AuditResult {
     add("ok", "Focal point", "in the clear", "The densest region sits inside the safe box.");
   }
 
-  /* ---- copy layers ---- */
-  const logoAspect = logo ? logo.naturalHeight / logo.naturalWidth : 0.3;
-  const L = layout(pl, d, logoAspect);
+  /* ---- every layer, checked on its own terms ---- */
+  const ctx: LayoutContext = {
+    lang: d.lang,
+    logoAspect: logo ? logo.naturalHeight / logo.naturalWidth : 0.3,
+  };
 
-  if (d.copyOn && (d.head || d.brand)) {
-    const hi = intrusion(pl, L.head);
-    if (hi.worst > 4) {
-      add(
-        "bad",
-        "Headline placement",
-        `overlaps ${hi.side}`,
-        `The headline block crosses <b>${hi.worst}px</b> into the ${hi.side} reserved band. Drag it inward, or use Snap to safe box.`,
-        clamp(Math.round((hi.worst / pl.h) * 260), 6, 26)
-      );
-    } else {
-      add("ok", "Headline placement", "inside safe box", "Clears every reserved band on this placement.");
+  if (d.copyOn) {
+    const placed = placeAll(pl, d, ctx);
+    let clean = 0;
+
+    for (const p of placed) {
+      const l = p.layer;
+      // a full-width band is meant to sit in the furniture; it is not a mistake
+      if (l.kind === "shape" && l.shape === "band") continue;
+      if (l.kind === "logo" && !logo) continue;
+
+      const hit = intrusion(pl, p.box);
+      if (hit.worst > 4) {
+        add(
+          "bad",
+          l.name,
+          `overlaps ${hit.side}`,
+          `Crosses <b>${hit.worst}px</b> into the ${hit.side} reserved band. Drag it inward, or use Snap into this safe box.`,
+          clamp(Math.round((hit.worst / pl.h) * 240), 5, 24)
+        );
+      } else {
+        clean++;
+      }
+
+      if (l.kind === "text") {
+        if (l.size < 3 && l.text.trim()) {
+          add(
+            "warn",
+            l.name,
+            "small type",
+            `<b>${l.size.toFixed(1)}%</b> of frame width (${Math.round(
+              (pl.w * l.size) / 100
+            )}px). Under 3% is hard work on a phone at arm's length.`,
+            6
+          );
+        }
+        if (!l.scrim.on && l.text.trim()) {
+          const bgL = lumaOfRect(map, p.box.x, p.box.y, p.box.w, p.box.h);
+          const cr = contrastRatio(hexLuma(l.color), bgL);
+          if (cr < 3) {
+            add(
+              "bad",
+              l.name,
+              "contrast fails",
+              `About <b>${cr.toFixed(1)}:1</b> against the artwork underneath. Large text needs 3:1. Add a scrim or change the colour.`,
+              11
+            );
+          } else if (cr < 4.5) {
+            add(
+              "warn",
+              l.name,
+              "contrast thin",
+              `About <b>${cr.toFixed(1)}:1</b> — clears the large-text bar but will struggle in Gulf sunlight.`,
+              4
+            );
+          }
+        }
+      }
+
+      if (l.kind === "cta") {
+        const cr = contrastRatio(hexLuma(l.ink), hexLuma(l.bg.color));
+        if (cr < 4.5) {
+          add(
+            cr < 3 ? "bad" : "warn",
+            l.name,
+            `${cr.toFixed(1)}:1`,
+            `Button label against its own fill is <b>${cr.toFixed(1)}:1</b>. Buttons need 4.5:1 to read at speed.`,
+            6
+          );
+        }
+      }
+
+      if (l.kind === "icon" && !l.src) {
+        const bgL = lumaOfRect(map, p.box.x, p.box.y, p.box.w, p.box.h);
+        const cr = contrastRatio(hexLuma(l.color), bgL);
+        if (cr < 3) {
+          add("warn", l.name, "low contrast", `About <b>${cr.toFixed(1)}:1</b> against what is behind it.`, 4);
+        }
+      }
     }
 
-    if (d.size < 4) {
+    if (clean && clean === placed.filter(p => !(p.layer.kind === "shape" && p.layer.shape === "band")).length) {
+      add("ok", "Layer placement", `${clean} clear`, "Every layer sits inside this placement's safe box.");
+    }
+
+    if (!logo && d.layers.some(l => l.kind === "logo" && l.on)) {
       add(
         "warn",
-        "Type size",
-        "small",
-        `Headline is <b>${d.size.toFixed(1)}%</b> of frame width (${Math.round(
-          (pl.w * d.size) / 100
-        )}px). Under 4% is hard work on a phone at arm's length.`,
+        "Logo",
+        "no file",
+        "A logo layer exists but no image is loaded. Brand recognition inside the first 2 seconds is the single biggest lever on Snap and TikTok.",
+        3
+      );
+    }
+
+    /* ---- RTL against a right-hand rail ---- */
+    if (isRTL(d.lang) && pl.rail) {
+      add(
+        "warn",
+        "RTL layout",
+        "rail conflict",
+        `Arabic sets from the right, which is where this placement stacks its action icons (${pl.safe.r}px). Mirror the layout: anchor right but inside the rail, or push left.`,
         8
       );
-    } else {
-      add(
-        "ok",
-        "Type size",
-        `${d.size.toFixed(1)}% · ${Math.round((pl.w * d.size) / 100)}px`,
-        "Readable at thumb distance."
-      );
     }
-
-    const bgL = lumaOfRect(map, L.head.x, L.head.y, L.head.w, L.head.h);
-    const cr = contrastRatio(hexLuma(d.headColor), bgL);
-    if (d.scrim) {
-      add("ok", "Headline contrast", "scrim on", "A scrim guarantees separation regardless of what sits underneath.");
-    } else if (cr < 3) {
-      add(
-        "bad",
-        "Headline contrast",
-        "fails",
-        `About <b>${cr.toFixed(
-          1
-        )}:1</b> against the artwork underneath. Large text needs 3:1. Add a scrim or change the colour.`,
-        11
-      );
-    } else if (cr < 4.5) {
-      add(
-        "warn",
-        "Headline contrast",
-        "thin",
-        `About <b>${cr.toFixed(1)}:1</b> — clears the large-text bar but will struggle in Gulf sunlight.`,
-        4
-      );
-    } else {
-      add("ok", "Headline contrast", `${cr.toFixed(1)}:1`, "Comfortable separation from the artwork.");
-    }
-  }
-
-  if (d.copyOn && d.cta) {
-    const ci = intrusion(pl, L.cta);
-    if (ci.worst > 4) {
-      add(
-        "bad",
-        "CTA placement",
-        `overlaps ${ci.side}`,
-        `The CTA crosses <b>${ci.worst}px</b> into the ${ci.side} reserved band.`,
-        clamp(Math.round((ci.worst / pl.h) * 220), 5, 20)
-      );
-    } else {
-      add("ok", "CTA placement", "inside safe box", "The CTA pill clears every reserved band here.");
-    }
-    const ctaCr = contrastRatio(hexLuma(d.ctaInk), hexLuma(d.ctaBg));
-    if (ctaCr < 4.5) {
-      add(
-        ctaCr < 3 ? "bad" : "warn",
-        "CTA contrast",
-        `${ctaCr.toFixed(1)}:1`,
-        `CTA text against its own background is <b>${ctaCr.toFixed(
-          1
-        )}:1</b>. Buttons need 4.5:1 to read at speed.`,
-        6
-      );
-    } else {
-      add("ok", "CTA contrast", `${ctaCr.toFixed(1)}:1`, "Button label reads cleanly against its fill.");
-    }
-  }
-
-  if (logo) {
-    const li = intrusion(pl, L.logo);
-    if (li.worst > 4) {
-      add(
-        "bad",
-        "Logo placement",
-        `overlaps ${li.side}`,
-        `The logo crosses <b>${li.worst}px</b> into the ${li.side} reserved band.`,
-        clamp(Math.round((li.worst / pl.h) * 200), 4, 16)
-      );
-    } else {
-      add("ok", "Logo placement", "inside safe box", "The logo sits clear of platform UI.");
-    }
-  } else if (d.copyOn) {
-    add(
-      "warn",
-      "Logo",
-      "not set",
-      "No logo loaded. Brand recognition inside the first 2 seconds is the single biggest lever on Snap and TikTok.",
-      3
-    );
-  }
-
-  /* ---- RTL against a right-hand rail ---- */
-  if (d.copyOn && isRTL(d.lang) && pl.rail) {
-    add(
-      "warn",
-      "RTL layout",
-      "rail conflict",
-      `Arabic sets from the right, which is where this placement stacks its action icons (${pl.safe.r}px). Mirror the layout: anchor right but inside the rail, or push left.`,
-      8
-    );
   }
 
   /* ---- platform re-crops ---- */

@@ -8,15 +8,15 @@
  * revise their UI without notice — edit this file, not the components.
  */
 
+import type { Layer } from "./layers";
+
 export type Lang = "en" | "najdi" | "gulf" | "msa";
 export type Fit = "cover" | "contain";
-export type LayerKey = "head" | "cta" | "logo";
 
 export interface Pt {
   x: number;
   y: number;
 }
-export type Layers = Record<LayerKey, Pt>;
 
 /** Reserved pixels against the placement's own canvas. */
 export interface SafeBox {
@@ -72,52 +72,24 @@ export interface BrandKit {
   ctaInk: string;
 }
 
-/** Everything that defines the layout, independent of the pixels behind it. */
+/**
+ * Everything that defines the layout, independent of the pixels behind it.
+ * The design IS the layer list — there are no fixed headline/CTA/logo slots,
+ * so "add another subheading" and "add a shape" are the same operation.
+ */
 export interface Design {
   fit: Fit;
   lang: Lang;
+  /** master switch: hide every layer at once to judge the artwork alone */
   copyOn: boolean;
-  brand: string;
-  head: string;
-  cta: string;
-  headFont: string;
-  headColor: string;
-  /** second headline colour, applied to [bracketed] words */
-  headColor2: string;
-  ctaBg: string;
-  ctaInk: string;
-  /** headline size as a percentage of frame width */
-  size: number;
-  /** brand eyebrow size as a percentage of frame width — independent of the headline */
-  brandSize: number;
-  /** CTA label size as a percentage of frame width — independent of the headline */
-  ctaSize: number;
-  /** text block width as a percentage of frame width */
-  blockW: number;
-  /** logo width as a percentage of frame width */
-  logoW: number;
-  scrim: boolean;
-  scrimColor: string;
-  /** 0-100 */
-  scrimOpacity: number;
-  /** padding around the copy block, as a percentage of headline size */
-  scrimPad: number;
-  /** the logo gets its own plate — a logo often needs one where the copy does not */
-  logoScrim: boolean;
-  logoScrimColor: string;
-  logoScrimOpacity: number;
-  /** padding around the logo, as a percentage of logo width */
-  logoScrimPad: number;
-  /** corner radius as a percentage of the plate's shorter side; 50 = pill/circle */
-  logoScrimRadius: number;
-  /** the default position, used by any placement without its own */
-  layers: Layers;
+  /** paint order, back to front */
+  layers: Layer[];
   /**
-   * Per-placement positions, keyed by placement id. Dragging inside one
-   * placement only ever writes here, so moving copy on TikTok cannot silently
-   * break Snapchat.
+   * Per-placement positions: overrides[placementId][layerId]. Dragging inside
+   * one placement only ever writes here, so moving copy on TikTok cannot
+   * silently break Snapchat.
    */
-  overrides: Record<string, Layers>;
+  overrides: Record<string, Record<string, Pt>>;
 }
 
 export interface CreativeMeta {
@@ -127,32 +99,11 @@ export interface CreativeMeta {
   h: number;
 }
 
-export const DESIGN_DEFAULTS: Omit<
-  Design,
-  "brand" | "head" | "cta" | "headFont" | "headColor" | "headColor2" | "ctaBg" | "ctaInk"
-> = {
+/** Everything about a design except the layers, which need the brand kit. */
+export const DESIGN_BASE: Omit<Design, "layers"> = {
   fit: "cover",
   lang: "en",
   copyOn: true,
-  size: 6.2,
-  brandSize: 2.2,
-  ctaSize: 2.6,
-  blockW: 80,
-  logoW: 22,
-  scrim: false,
-  scrimColor: "#07080E",
-  scrimOpacity: 50,
-  scrimPad: 50,
-  logoScrim: false,
-  logoScrimColor: "#FFFFFF",
-  logoScrimOpacity: 100,
-  logoScrimPad: 14,
-  logoScrimRadius: 22,
-  layers: {
-    head: { x: 0.08, y: 0.36 },
-    cta: { x: 0.08, y: 0.56 },
-    logo: { x: 0.06, y: 0.05 },
-  },
   overrides: {},
 };
 

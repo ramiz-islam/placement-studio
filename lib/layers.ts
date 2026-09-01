@@ -1,0 +1,280 @@
+/**
+ * The layer model.
+ *
+ * Everything on the frame is a layer in one ordered list: text, CTA, logo,
+ * shapes, icons. First in the array paints first, so the list reads
+ * back-to-front the way a design tool's layer panel does.
+ *
+ * Two rules make the rest of the app simple:
+ *  · Every position and size is a fraction of the placement canvas, never a
+ *    screen pixel. That is what lets one layout be judged against 23 frames
+ *    and exported at any resolution.
+ *  · A layer's paint definition lives here and nowhere else, so the DOM
+ *    preview and the canvas exporter cannot drift apart.
+ */
+
+import type { Pt } from "./core";
+
+export type LayerKind = "text" | "cta" | "logo" | "shape" | "icon";
+
+/** Solid when `color2` is null, otherwise a linear gradient at `angle`. */
+export interface Fill {
+  color: string;
+  color2: string | null;
+  /** degrees; 0 = left to right, 90 = top to bottom */
+  angle: number;
+  /** 0-100 */
+  opacity: number;
+}
+
+export const solid = (color: string, opacity = 100): Fill => ({ color, color2: null, angle: 90, opacity });
+
+/** A plate behind a layer. `pad` and `radius` are percentages of the layer's own width. */
+export interface Plate {
+  on: boolean;
+  fill: Fill;
+  pad: number;
+  radius: number;
+}
+
+export const noPlate = (color = "#07080E", opacity = 50): Plate => ({
+  on: false,
+  fill: solid(color, opacity),
+  pad: 50,
+  radius: 18,
+});
+
+interface Base {
+  id: string;
+  kind: LayerKind;
+  /** shown in the layer list; the user can rename it */
+  name: string;
+  on: boolean;
+  /** top-left, as a fraction of the placement canvas */
+  pos: Pt;
+}
+
+export interface TextLayer extends Base {
+  kind: "text";
+  /** words in [square brackets] take `color2` */
+  text: string;
+  font: string;
+  /** % of frame width */
+  size: number;
+  /** text block width, % of frame width */
+  blockW: number;
+  color: string;
+  color2: string;
+  /** null follows the typeface's own line height */
+  lineHeight: number | null;
+  /** letter-spacing in em */
+  tracking: number;
+  upper: boolean;
+  scrim: Plate;
+}
+
+export interface CtaLayer extends Base {
+  kind: "cta";
+  text: string;
+  font: string;
+  size: number;
+  bg: Fill;
+  ink: string;
+  /** % of the pill's height; 50 is a full pill */
+  radius: number;
+}
+
+export interface LogoLayer extends Base {
+  kind: "logo";
+  /** % of frame width */
+  w: number;
+  /** a plate that hugs the logo */
+  plate: Plate;
+  /** a full-width strip across the frame, behind the logo, that moves with it */
+  band: { on: boolean; fill: Fill; pad: number };
+}
+
+export type ShapeKind = "rect" | "ellipse" | "band" | "line";
+
+export interface ShapeLayer extends Base {
+  kind: "shape";
+  shape: ShapeKind;
+  /** % of frame width / height */
+  w: number;
+  h: number;
+  fill: Fill;
+  /** % of the shorter side */
+  radius: number;
+}
+
+export interface IconLayer extends Base {
+  kind: "icon";
+  /** a built-in id from ICONS, or "custom" when `src` is set */
+  icon: string;
+  src: string | null;
+  /** % of frame width */
+  w: number;
+  color: string;
+}
+
+export type Layer = TextLayer | CtaLayer | LogoLayer | ShapeLayer | IconLayer;
+
+/* ============================================================
+   BUILT-IN ICONS
+   One path string per icon in a 24×24 box, so the same definition
+   draws in the DOM as <path> and on canvas as a Path2D.
+   ============================================================ */
+export const ICONS: { id: string; label: string; d: string }[] = [
+  { id: "check", label: "Check", d: "M20.3 6.4 9.6 17.1l-5.9-5.9 1.8-1.8 4.1 4.1 8.9-8.9z" },
+  { id: "shield", label: "Shield", d: "M12 2 4 5v6.5c0 5 3.4 9.4 8 10.5 4.6-1.1 8-5.5 8-10.5V5zm-1 14-4-4 1.6-1.6L11 12.8l4.4-4.4L17 10z" },
+  { id: "star", label: "Star", d: "M12 2.5l2.9 6.1 6.6.9-4.8 4.7 1.2 6.6L12 17.6 6.1 20.8l1.2-6.6L2.5 9.5l6.6-.9z" },
+  { id: "spark", label: "Spark", d: "M12 2l2 6.5L20.5 11 14 13l-2 6.5-2-6.5L3.5 11 10 8.5z" },
+  { id: "tag", label: "Price tag", d: "M11 2 2 11l11 11 9-9V2zm5.5 6a1.8 1.8 0 1 1 0-3.6 1.8 1.8 0 0 1 0 3.6z" },
+  { id: "clock", label: "Clock", d: "M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm1 11h-4v-2h2V6h2z" },
+  { id: "pin", label: "Location", d: "M12 2a7 7 0 0 0-7 7c0 5.3 7 13 7 13s7-7.7 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z" },
+  { id: "phone", label: "Phone", d: "M6.6 3h3l1.6 4-2.1 1.6a12 12 0 0 0 5.3 5.3L16 11.8l4 1.6v3c0 .9-.7 1.6-1.6 1.6A15 15 0 0 1 3 4.6C3 3.7 3.7 3 4.6 3z" },
+  { id: "arrow", label: "Arrow", d: "M13.5 4 12 5.5 17 10.5H3v2h14L12 17.5 13.5 19l7.5-7.5z" },
+  { id: "car", label: "Car", d: "M5 11l1.6-4.4A2 2 0 0 1 8.5 5h7a2 2 0 0 1 1.9 1.6L19 11h1v6h-2.5a2 2 0 1 1-4 0h-3a2 2 0 1 1-4 0H4v-6zm2.2-.6h9.6l-1.1-3.1a.6.6 0 0 0-.6-.4H8.9a.6.6 0 0 0-.6.4z" },
+  { id: "wallet", label: "Wallet", d: "M3 6.5A2.5 2.5 0 0 1 5.5 4H18v3H5.5a.5.5 0 0 0 0 1H20a1 1 0 0 1 1 1v8a2 2 0 0 1-2 2H5.5A2.5 2.5 0 0 1 3 16.5zm13 5.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3z" },
+  { id: "percent", label: "Percent", d: "M6.5 4a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5zm11 11a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5zM19 4.6 5.6 20 4 18.6 17.4 3.2z" },
+];
+export const ICON = (id: string) => ICONS.find(i => i.id === id) ?? ICONS[0];
+
+/* ============================================================
+   FACTORIES
+   ============================================================ */
+
+let seq = 0;
+export const layerId = (kind: string) => `${kind}-${(seq++).toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}`;
+
+export interface NewLayerDefaults {
+  font: string;
+  color: string;
+  color2: string;
+  ctaBg: string;
+  ctaInk: string;
+}
+
+export function textLayer(d: NewLayerDefaults, over: Partial<TextLayer> = {}): TextLayer {
+  return {
+    id: layerId("text"),
+    kind: "text",
+    name: "Text",
+    on: true,
+    pos: { x: 0.08, y: 0.4 },
+    text: "New line of copy",
+    font: d.font,
+    size: 4,
+    blockW: 80,
+    color: d.color,
+    color2: d.color2,
+    lineHeight: null,
+    tracking: 0,
+    upper: false,
+    scrim: noPlate(),
+    ...over,
+  };
+}
+
+export function ctaLayer(d: NewLayerDefaults, over: Partial<CtaLayer> = {}): CtaLayer {
+  return {
+    id: layerId("cta"),
+    kind: "cta",
+    name: "Call to action",
+    on: true,
+    pos: { x: 0.08, y: 0.56 },
+    text: "Download the app",
+    font: d.font,
+    size: 2.6,
+    bg: solid(d.ctaBg),
+    ink: d.ctaInk,
+    radius: 50,
+    ...over,
+  };
+}
+
+export function logoLayer(over: Partial<LogoLayer> = {}): LogoLayer {
+  return {
+    id: layerId("logo"),
+    kind: "logo",
+    name: "Logo",
+    on: true,
+    pos: { x: 0.06, y: 0.05 },
+    w: 22,
+    plate: { ...noPlate("#FFFFFF", 100), radius: 22 },
+    band: { on: false, fill: solid("#141652", 85), pad: 30 },
+    ...over,
+  };
+}
+
+export function shapeLayer(over: Partial<ShapeLayer> = {}): ShapeLayer {
+  return {
+    id: layerId("shape"),
+    kind: "shape",
+    name: "Shape",
+    on: true,
+    pos: { x: 0.1, y: 0.3 },
+    shape: "rect",
+    w: 40,
+    h: 12,
+    fill: solid("#FF5450", 100),
+    radius: 8,
+    ...over,
+  };
+}
+
+export function iconLayer(over: Partial<IconLayer> = {}): IconLayer {
+  return {
+    id: layerId("icon"),
+    kind: "icon",
+    name: "Icon",
+    on: true,
+    pos: { x: 0.1, y: 0.2 },
+    icon: "check",
+    src: null,
+    w: 8,
+    color: "#BFFF00",
+    ...over,
+  };
+}
+
+/** A band is a full-width strip — the shape most ad layouts actually need. */
+export const bandLayer = (over: Partial<ShapeLayer> = {}) =>
+  shapeLayer({
+    name: "Band",
+    shape: "band",
+    pos: { x: 0, y: 0.72 },
+    w: 100,
+    h: 14,
+    radius: 0,
+    fill: solid("#141652", 90),
+    ...over,
+  });
+
+/**
+ * The default stack, matching what the tool looked like before layers existed:
+ * logo, brand eyebrow, headline, CTA. Nothing regresses visually.
+ */
+export function defaultStack(d: NewLayerDefaults, brand: string, head: string, cta: string): Layer[] {
+  return [
+    logoLayer(),
+    textLayer(d, {
+      name: "Brand line",
+      text: brand,
+      size: 2.2,
+      tracking: 0.16,
+      upper: true,
+      pos: { x: 0.08, y: 0.36 },
+    }),
+    textLayer(d, { name: "Headline", text: head, size: 6.2, pos: { x: 0.08, y: 0.4 } }),
+    ctaLayer(d, { text: cta }),
+  ];
+}
+
+export const LAYER_LABEL: Record<LayerKind, string> = {
+  text: "Text",
+  cta: "Button",
+  logo: "Logo",
+  shape: "Shape",
+  icon: "Icon",
+};

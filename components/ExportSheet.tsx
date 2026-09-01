@@ -97,13 +97,14 @@ export function ExportSheet({ open, onClose }: { open: boolean; onClose: () => v
         img: st.img,
         logo: st.logo,
         design: st.design,
+        ctx: st.ctx,
       });
       const cap = pl.maxMB * 1048576;
       const enc = fitCap
         ? encodeUnderCap(canvas, cap, format, st.padColor)
         : encode(canvas, format, quality / 100, st.padColor);
       results.push({
-        name: exportName(st.design.brand || st.kit.brand, pl, canvas.width, canvas.height, EXT[enc.format], withGuides),
+        name: exportName(st.kit.brand, pl, canvas.width, canvas.height, EXT[enc.format], withGuides),
         url: enc.url,
         pl,
         w: canvas.width,

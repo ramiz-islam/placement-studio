@@ -1,13 +1,13 @@
 /**
  * Canvas exporter. Renders a placement at native resolution, without the
- * platform chrome, using the same layout() geometry as the preview.
+ * platform chrome, from the same layer geometry the preview uses.
  *
  * On "high quality" for ad upload — what actually matters, in order:
  *  1. Exact pixel dimensions for the placement. Platforms resample anything
  *     else, and their resampler is worse than ours.
- *  2. No upscaling of the source. Copy and logo are drawn as vectors/text at
- *     full output resolution, so they stay crisp; only the photograph can
- *     soften, and we warn when it would.
+ *  2. No upscaling of the source. Text, shapes and icons are drawn at full
+ *     output resolution, so they stay crisp; only the photograph can soften,
+ *     and we warn when it would.
  *  3. Progressive downsampling. A single drawImage from a much larger source
  *     aliases; halving in steps does not.
  *  4. Landing under the platform's file-size cap without visible artefacts,
@@ -16,8 +16,9 @@
  *     normalises to it, and there is no HDR ad format to target.
  */
 
-import { FONT, isRTL, type Design, type Fit, type Placement } from "./core";
-import { coverRect, layout, lineWidth, logoScrimBox, measure, rgba, safeF, scrimBox } from "./geometry";
+import type { Design, Fit, Placement } from "./core";
+import type { Fill } from "./layers";
+import { coverRect, lineWidth, placeAll, plateBox, rgba, safeF, type LayoutContext, type Placed } from "./geometry";
 
 export type ExportFormat = "image/png" | "image/jpeg" | "image/webp";
 
@@ -30,10 +31,11 @@ export interface RenderOpts {
   img: HTMLImageElement;
   logo: HTMLImageElement | null;
   design: Design;
+  ctx: LayoutContext;
 }
 
 function roundRect(g: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
-  const rr = Math.min(r, w / 2, h / 2);
+  const rr = Math.max(0, Math.min(r, w / 2, h / 2));
   g.beginPath();
   g.moveTo(x + rr, y);
   g.lineTo(x + w - rr, y);
@@ -45,6 +47,24 @@ function roundRect(g: CanvasRenderingContext2D, x: number, y: number, w: number,
   g.lineTo(x, y + rr);
   g.arcTo(x, y, x + rr, y, rr);
   g.closePath();
+}
+
+/** Solid colour, or a linear gradient across the given box at the fill's angle. */
+function paint(g: CanvasRenderingContext2D, f: Fill, x: number, y: number, w: number, h: number): string | CanvasGradient {
+  if (!f.color2) return rgba(f.color, f.opacity);
+  const rad = ((f.angle % 360) * Math.PI) / 180;
+  const cx = x + w / 2;
+  const cy = y + h / 2;
+  const len = (Math.abs(Math.cos(rad)) * w + Math.abs(Math.sin(rad)) * h) / 2;
+  const grad = g.createLinearGradient(
+    cx - Math.cos(rad) * len,
+    cy - Math.sin(rad) * len,
+    cx + Math.cos(rad) * len,
+    cy + Math.sin(rad) * len
+  );
+  grad.addColorStop(0, rgba(f.color, f.opacity));
+  grad.addColorStop(1, rgba(f.color2, f.opacity));
+  return grad;
 }
 
 /**
@@ -60,7 +80,6 @@ function resampled(img: HTMLImageElement, w: number, h: number): CanvasImageSour
   let ch = img.naturalHeight;
   let src: CanvasImageSource = img;
   let canvas: HTMLCanvasElement | null = null;
-
   while (cw > tw * 2 && ch > th * 2) {
     const nw = Math.max(tw, Math.round(cw / 2));
     const nh = Math.max(th, Math.round(ch / 2));
@@ -81,8 +100,144 @@ function resampled(img: HTMLImageElement, w: number, h: number): CanvasImageSour
 
 /** How much the source has to stretch to fill this placement. >1 means upscale. */
 export function upscaleFactor(pl: Placement, img: HTMLImageElement, fit: Fit, scale: number): number {
-  const r = coverRect(img.naturalWidth, img.naturalHeight, pl.w * scale, pl.h * scale, fit);
-  return r.s;
+  return coverRect(img.naturalWidth, img.naturalHeight, pl.w * scale, pl.h * scale, fit).s;
+}
+
+function drawLayer(
+  g: CanvasRenderingContext2D,
+  p: Placed,
+  pl: Placement,
+  o: RenderOpts,
+  W: number,
+  H: number,
+  logoCache: Map<string, HTMLImageElement>
+) {
+  const s = o.scale;
+  const x = p.box.x * W;
+  const y = p.box.y * H;
+  const w = p.box.w * W;
+  const h = p.box.h * H;
+
+  switch (p.layer.kind) {
+    case "shape": {
+      const l = p.layer;
+      g.fillStyle = paint(g, l.fill, x, y, w, h);
+      if (l.shape === "ellipse") {
+        g.beginPath();
+        g.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2);
+        g.fill();
+      } else {
+        const shorter = Math.min(w, h);
+        roundRect(g, x, y, w, h, (shorter * l.radius) / 100);
+        g.fill();
+      }
+      return;
+    }
+
+    case "icon": {
+      const l = p.layer;
+      const custom = l.src ? logoCache.get(l.src) : null;
+      if (custom) {
+        g.drawImage(resampled(custom, w, w * (custom.naturalHeight / custom.naturalWidth)), x, y, w, w * (custom.naturalHeight / custom.naturalWidth));
+        return;
+      }
+      if (p.metrics.kind !== "icon") return;
+      g.save();
+      g.translate(x, y);
+      g.scale(w / 24, w / 24);
+      g.fillStyle = l.color;
+      g.fill(new Path2D(p.metrics.path));
+      g.restore();
+      return;
+    }
+
+    case "logo": {
+      const l = p.layer;
+      if (!o.logo) return;
+      const lw = w;
+      const lh = lw * (o.logo.naturalHeight / o.logo.naturalWidth);
+
+      if (l.band.on) {
+        const pad = (lw * l.band.pad) / 100;
+        const by = y - pad;
+        const bh = lh + pad * 2;
+        g.fillStyle = paint(g, l.band.fill, 0, by, W, bh);
+        g.fillRect(0, by, W, bh);
+      }
+      if (l.plate.on) {
+        const pad = (lw * l.plate.pad) / 100;
+        const shorter = Math.min(lw + pad * 2, lh + pad * 2);
+        g.fillStyle = paint(g, l.plate.fill, x - pad, y - pad, lw + pad * 2, lh + pad * 2);
+        roundRect(g, x - pad, y - pad, lw + pad * 2, lh + pad * 2, (shorter * l.plate.radius) / 100);
+        g.fill();
+      }
+      g.drawImage(resampled(o.logo, lw, lh), x, y, lw, lh);
+      return;
+    }
+
+    case "cta": {
+      const l = p.layer;
+      if (p.metrics.kind !== "cta") return;
+      const pw = p.metrics.pillW * s;
+      const ph = p.metrics.pillH * s;
+      const sizePx = p.metrics.sizePx * s;
+      g.fillStyle = paint(g, l.bg, x, y, pw, ph);
+      roundRect(g, x, y, pw, ph, (ph * l.radius) / 100);
+      g.fill();
+      g.fillStyle = l.ink;
+      g.font = `700 ${sizePx}px ${p.metrics.fontCss}`;
+      g.textAlign = "center";
+      g.textBaseline = "middle";
+      g.fillText(l.text, x + pw / 2, y + ph / 2 + sizePx * 0.04);
+      return;
+    }
+
+    case "text": {
+      const l = p.layer;
+      if (p.metrics.kind !== "text") return;
+      const m = p.metrics;
+      const sizePx = m.sizePx * s;
+      const spaceW = m.spaceW * s;
+
+      if (l.scrim.on) {
+        const pb = plateBox(pl, p);
+        const padX = pb.padX * s;
+        const padY = pb.padY * s;
+        g.fillStyle = paint(g, l.scrim.fill, x - padX, y - padY, w + padX * 2, h + padY * 2);
+        roundRect(g, x - padX, y - padY, w + padX * 2, h + padY * 2, pb.radius * s);
+        g.fill();
+      }
+
+      g.font = `${m.weight} ${sizePx}px ${m.fontCss}`;
+      g.textBaseline = "top";
+      g.textAlign = "left";
+      g.direction = m.rtl ? "rtl" : "ltr";
+      const ax = m.rtl ? x + w : x;
+      let ty = y;
+      const track = l.tracking * sizePx;
+
+      for (const line of m.lines) {
+        const scaled = line.map(t => ({ ...t, w: t.w * s }));
+        let tx = m.rtl ? ax - lineWidth(scaled, spaceW) : ax;
+        for (const t of scaled) {
+          g.fillStyle = t.accent ? l.color2 : l.color;
+          if (track) {
+            // draw glyph by glyph so tracking matches the measured width
+            let gx = tx;
+            for (const ch of t.text) {
+              g.fillText(ch, gx, ty);
+              gx += g.measureText(ch).width + track;
+            }
+          } else {
+            g.fillText(t.text, tx, ty);
+          }
+          tx += t.w + spaceW;
+        }
+        ty += sizePx * m.lh;
+      }
+      return;
+    }
+  }
 }
 
 export function renderPlacement(pl: Placement, o: RenderOpts): HTMLCanvasElement {
@@ -102,95 +257,16 @@ export function renderPlacement(pl: Placement, o: RenderOpts): HTMLCanvasElement
   const r = coverRect(o.img.naturalWidth, o.img.naturalHeight, W, H, o.fit);
   g.drawImage(resampled(o.img, r.w, r.h), r.x, r.y, r.w, r.h);
 
-  const d = o.design;
-  if (o.copy) {
-    const logoAspect = o.logo ? o.logo.naturalHeight / o.logo.naturalWidth : 0.3;
-    const L = layout(pl, d, logoAspect);
-    const rtl = isRTL(d.lang);
-
-    if (o.logo) {
-      const lw = L.logo.w * W;
-      const lh = lw * (o.logo.naturalHeight / o.logo.naturalWidth);
-      const lx = L.logo.x * W;
-      const ly = L.logo.y * H;
-
-      if (d.logoScrim) {
-        const lsb = logoScrimBox(pl, L, d);
-        const pad = lsb.pad * o.scale;
-        g.fillStyle = rgba(d.logoScrimColor, d.logoScrimOpacity);
-        roundRect(g, lx - pad, ly - pad, lw + pad * 2, lh + pad * 2, lsb.radius * o.scale);
-        g.fill();
-      }
-      g.drawImage(resampled(o.logo, lw, lh), lx, ly, lw, lh);
-    }
-
-    if (d.copyOn && (d.head || d.brand)) {
-      const F = L.head.font;
-      const hx = L.head.x * W;
-      const hy = L.head.y * H;
-      const hw = L.head.w * W;
-      const headPx = L.head.headPx * o.scale;
-      const brandPx = L.head.brandPx * o.scale;
-
-      if (d.scrim) {
-        const sb = scrimBox(L, d);
-        const padX = sb.padX * o.scale;
-        const padY = sb.padY * o.scale;
-        g.fillStyle = rgba(d.scrimColor, d.scrimOpacity);
-        roundRect(g, hx - padX, hy - padY, hw + padX * 2, L.head.h * H + padY * 2, sb.radius * o.scale);
-        g.fill();
-      }
-
-      g.textAlign = rtl ? "right" : "left";
-      g.textBaseline = "top";
-      g.direction = rtl ? "rtl" : "ltr";
-      const ax = rtl ? hx + hw : hx;
-      let y = hy;
-
-      if (d.brand) {
-        g.fillStyle = d.headColor;
-        g.font = `700 ${brandPx}px ${F.css}`;
-        // letter-spaced eyebrow in Latin; Arabic must not be split
-        const tracked = rtl ? d.brand : d.brand.toUpperCase().split("").join(" ");
-        g.fillText(tracked, ax, y);
-        y += brandPx * 1.5 + headPx * 0.22;
-      }
-      if (d.head) {
-        g.font = `${F.weight} ${headPx}px ${F.css}`;
-        const spaceW = L.head.spaceW * o.scale;
-        // word by word so each run can take its own colour. Arabic joins only
-        // within a word, never across a space, so splitting here is safe.
-        g.textAlign = "left";
-        for (const line of L.head.lines) {
-          const scaled = line.map(t => ({ ...t, w: t.w * o.scale }));
-          let x = rtl ? ax - lineWidth(scaled, spaceW) : ax;
-          for (const t of scaled) {
-            g.fillStyle = t.accent ? d.headColor2 : d.headColor;
-            g.fillText(t.text, x, y);
-            x += t.w + spaceW;
-          }
-          y += headPx * L.head.lh;
-        }
+  if (o.copy && o.design.copyOn) {
+    const cache = new Map<string, HTMLImageElement>();
+    for (const p of placeAll(pl, o.design, o.ctx)) {
+      if (p.layer.kind === "icon" && p.layer.src) {
+        const im = new Image();
+        im.src = p.layer.src;
+        if (im.complete) cache.set(p.layer.src, im);
       }
     }
-
-    if (d.copyOn && d.cta) {
-      const F = FONT(d.headFont);
-      const ctaPx = L.cta.ctaPx * o.scale;
-      const bw = measure(d.cta, F.css, 700, ctaPx) + ctaPx * 2.2;
-      const bh = ctaPx * 2.5;
-      const bx = L.cta.x * W;
-      const by = L.cta.y * H;
-      g.fillStyle = d.ctaBg;
-      roundRect(g, bx, by, bw, bh, bh / 2);
-      g.fill();
-      g.fillStyle = d.ctaInk;
-      g.font = `700 ${ctaPx}px ${F.css}`;
-      g.textAlign = "center";
-      g.textBaseline = "middle";
-      g.direction = isRTL(d.lang) ? "rtl" : "ltr";
-      g.fillText(d.cta, bx + bw / 2, by + bh / 2 + ctaPx * 0.04);
-    }
+    for (const p of placeAll(pl, o.design, o.ctx)) drawLayer(g, p, pl, o, W, H, cache);
   }
 
   if (o.guides) {
@@ -251,12 +327,7 @@ function flattened(canvas: HTMLCanvasElement, bg: string): HTMLCanvasElement {
   return out;
 }
 
-export function encode(
-  canvas: HTMLCanvasElement,
-  format: ExportFormat,
-  quality: number,
-  bg = "#000000"
-): Encoded {
+export function encode(canvas: HTMLCanvasElement, format: ExportFormat, quality: number, bg = "#000000"): Encoded {
   if (format === "image/png") {
     const url = canvas.toDataURL("image/png");
     return { url, bytes: bytesOfDataUrl(url), format, quality: null };
@@ -268,8 +339,8 @@ export function encode(
 
 /**
  * Land under a platform's file-size cap at the best quality that fits.
- * A binary search over quality, not a guessed constant — the same creative
- * can be 400 KB or 4 MB depending on how much detail is in the photograph.
+ * A binary search over quality, not a guessed constant — the same creative can
+ * be 400 KB or 4 MB depending on how much detail is in the photograph.
  */
 export function encodeUnderCap(
   canvas: HTMLCanvasElement,
@@ -296,7 +367,6 @@ export function encodeUnderCap(
       hi = mid;
     }
   }
-  // still over at the floor: hand back the smallest we managed and let the UI say so
   return best.bytes <= maxBytes ? best : encode(canvas, format, 0.4, bg);
 }
 

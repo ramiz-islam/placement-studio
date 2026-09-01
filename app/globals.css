@@ -459,3 +459,46 @@ textarea[dir=rtl]{text-align:right}
 .device.framed{border-radius:calc(3.2cqw + 6px)}
 .device.grid-card.framed{border-radius:calc(3.6cqw + 4px)}
 .glab-d{font-family:var(--f-mono);font-size:10px;color:var(--muted-deep);margin-top:1px}
+
+/* ============================================================
+   LAYER PANEL
+   ============================================================ */
+.layer-list{list-style:none;margin:0 0 10px;padding:0;display:flex;flex-direction:column;gap:2px;max-height:270px;overflow-y:auto}
+.layer-row{
+  display:flex;align-items:center;gap:7px;padding:6px 7px;border-radius:var(--r-s);cursor:pointer;
+  border:1px solid transparent;background:var(--ink-800);transition:background .13s,border-color .13s;
+}
+.layer-row:hover{background:var(--ink-750)}
+.layer-row.on{border-color:var(--blue);background:var(--blue-ghost)}
+.layer-row.off{opacity:.45}
+.layer-row .lk{
+  width:18px;height:18px;flex:none;display:grid;place-items:center;border-radius:4px;
+  background:var(--ink-700);font-size:10.5px;color:var(--muted);font-family:var(--f-mono);
+}
+.layer-row.on .lk{background:var(--blue);color:#fff}
+.ln-name{flex:1;min-width:0;font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row-btn{
+  width:19px;height:19px;flex:none;border-radius:4px;font-size:11px;line-height:1;color:var(--muted-deep);
+  display:grid;place-items:center;
+}
+.row-btn:hover{background:var(--ink-600);color:var(--text)}
+.add-row{display:flex;flex-wrap:wrap;gap:5px}
+.add-row .mini-btn{flex:0 0 auto;padding:5px 9px;font-size:11.5px}
+
+.icon-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(34px,1fr));gap:5px}
+.icon-pick{
+  aspect-ratio:1;border:1px solid var(--line);border-radius:var(--r-s);background:var(--ink-800);
+  display:grid;place-items:center;padding:6px;transition:all .13s;
+}
+.icon-pick svg{width:100%;height:100%;fill:var(--text-dim)}
+.icon-pick:hover{border-color:var(--ink-600)}
+.icon-pick[aria-pressed="true"]{border-color:var(--blue);background:var(--blue-ghost)}
+.icon-pick[aria-pressed="true"] svg{fill:var(--blue-bright)}
+
+/* selected layer on the frame */
+.lay.selected{outline:1.5px solid var(--blue-bright) !important;outline-offset:.6cqw}
+.lay-logo,.lay-icon{line-height:0}
+.lay-logo img,.lay-icon img{display:block;width:100%;height:auto}
+.lay-cta{display:inline-block;font-weight:700;white-space:nowrap;line-height:1.1}
+.lay-shape{pointer-events:auto}
+.logo-band{position:absolute;z-index:-2;pointer-events:none}
