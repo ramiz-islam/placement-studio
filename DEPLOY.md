@@ -16,17 +16,23 @@ Push the repo **private**. It contains no keys (`.env.local` and `.dev.vars` are
 
 ## 1. GitHub
 
-The repo already exists locally with full history on `main`. Create an empty **private** repo on GitHub called `placement-studio`, then:
+The repo already exists locally with full history on `main`. **Done.** The repo is at `https://github.com/ramiz-islam/placement-studio` and `main` tracks `origin/main`.
 
-```bash
-cd C:\Users\seora\placement-studio
-git remote add origin https://github.com/<your-org>/placement-studio.git
+For reference, that was:
+
+```
+git remote add origin https://github.com/ramiz-islam/placement-studio.git
+```
+
+```
 git push -u origin main
 ```
 
+Note: PowerShell 5.1 has no `&&`, so run commands one at a time.
+
 Verify nothing sensitive went up:
 
-```bash
+```
 git ls-files | Select-String -Pattern "env|dev.vars"
 ```
 
@@ -38,29 +44,43 @@ That should return only `.env.local.example`.
 
 Log in and create the R2 bucket the generation library uses:
 
-```bash
+```
 npx wrangler login
+```
+
+```
 npx wrangler r2 bucket create placement-studio-generations
 ```
 
-Set the secrets (each prompts for the value, and none of them land in git):
+Now deploy once, which creates the Worker. Secrets cannot be set on a Worker that does not exist yet, so this comes
+first:
 
-```bash
+```
+npm run cf:deploy
+```
+
+Until `SITE_PASSWORD` is set the deployed URL answers **503 on every request** — that is the gate working, not a
+failure. Set the three secrets now; each prompts for the value and none of them land in git:
+
+```
 npx wrangler secret put SITE_PASSWORD
+```
+
+```
 npx wrangler secret put OPENAI_API_KEY
+```
+
+```
 npx wrangler secret put ANTHROPIC_API_KEY
 ```
 
-Preview it locally on the real Workers runtime first — this is what I used to verify it:
+Each `secret put` redeploys the Worker with the new value, so no extra deploy is needed. Reload the URL and the
+password prompt should appear.
 
-```bash
-npm run cf:preview
+To try it on the real Workers runtime locally before or after deploying:
+
 ```
-
-Then ship:
-
-```bash
-npm run cf:deploy
+npm run cf:preview
 ```
 
 ### Connecting it to GitHub for automatic deploys
