@@ -128,7 +128,9 @@ function Studio() {
           </div>
           <div>
             <div className="mark-name">Placement Studio</div>
-            <div className="mark-sub">CarSwitch</div>
+            <div className="mark-sub" title={`built ${process.env.NEXT_PUBLIC_BUILT_AT ?? ""}`}>
+              CarSwitch · {process.env.NEXT_PUBLIC_BUILD ?? "local"}
+            </div>
           </div>
         </div>
 
