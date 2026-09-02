@@ -289,7 +289,10 @@ export interface IconMetrics {
   kind: "icon";
   path: string;
 }
-export type Metrics = TextMetrics | CtaMetrics | LogoMetrics | ShapeMetrics | IconMetrics;
+export interface ScreenMetrics {
+  kind: "screen";
+}
+export type Metrics = TextMetrics | CtaMetrics | LogoMetrics | ShapeMetrics | IconMetrics | ScreenMetrics;
 
 export interface Placed {
   layer: Layer;
@@ -341,6 +344,35 @@ export function place(pl: Placement, d: Design, raw: Layer, c: LayoutContext, pl
         spaceW,
         blockPx
       );
+      if (layer.vertical) {
+        /*
+         * Stacked: one column, one glyph per row. Wrapping by width has no
+         * meaning here, so blockW is ignored and the column is as tall as the
+         * glyph count — which makes the height predictable and the overflow
+         * obvious rather than silently clipped.
+         */
+        const glyphs = [...plainText(layer.text).replace(/\s+/g, " ").trim()];
+        const colW = sizePx * 1.05;
+        const colH = glyphs.length * sizePx * lh;
+        const boxV = { x: pos.x, y: pos.y, w: colW / W, h: colH / H };
+        return {
+          layer,
+          box: boxV,
+          ink: boxV,
+          metrics: {
+            kind: "text",
+            align: "center",
+            lines: glyphs.map(ch => [{ text: ch, w: measure(ch, F.css, F.weight, sizePx), accent: false }]),
+            spaceW,
+            sizePx,
+            lh,
+            fontCss: F.css,
+            weight: F.weight,
+            rtl,
+          },
+        };
+      }
+
       // the widest line is the real extent; where it sits depends on alignment
       const widest = lines.reduce((a, ln) => Math.max(a, lineWidth(ln, spaceW)), 0);
       const slack = Math.max(0, blockPx - widest);
@@ -395,6 +427,11 @@ export function place(pl: Placement, d: Design, raw: Layer, c: LayoutContext, pl
       // safe-zone check has to measure
       return { layer, box: rotatedBox({ x, y: pos.y, w, h }, layer.rotation ?? 0, W, H), metrics: { kind: "shape" } };
     }
+    case "screen": {
+      const box = { x: pos.x, y: pos.y, w: layer.w / 100, h: layer.h / 100 };
+      return { layer, box, metrics: { kind: "screen" } };
+    }
+
     case "icon": {
       const w = layer.w / 100;
       return {

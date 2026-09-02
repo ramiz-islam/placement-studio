@@ -35,6 +35,7 @@ import {
   textLayer,
   chevronLayer,
   cutoutLayer,
+  screenLayer,
   stripLayer,
   type Layer,
   type LayerPatch,
@@ -166,7 +167,7 @@ export interface Studio extends StudioState {
 const Ctx = createContext<Studio | null>(null);
 
 /** Everything the add row can insert, including the two brand shape presets. */
-export type AddKind = "text" | "cta" | "logo" | "icon" | "shape" | "band" | "chevron" | "strip";
+export type AddKind = "text" | "cta" | "logo" | "icon" | "shape" | "band" | "chevron" | "strip" | "screen";
 
 const kitDefaults = (kit: BrandKit): NewLayerDefaults => ({
   font: kit.headFont,
@@ -466,13 +467,15 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
                 ? logoLayer()
                 : kind === "icon"
                   ? iconLayer()
-                  : kind === "band"
-                    ? bandLayer()
-                    : kind === "chevron"
-                      ? chevronLayer()
-                      : kind === "strip"
-                        ? stripLayer()
-                        : shapeLayer();
+                  : kind === "screen"
+                    ? screenLayer()
+                    : kind === "band"
+                      ? bandLayer()
+                      : kind === "chevron"
+                        ? chevronLayer()
+                        : kind === "strip"
+                          ? stripLayer()
+                          : shapeLayer();
         madeId = made.id;
 
         // A shape or band is background furniture: dropping it on top would

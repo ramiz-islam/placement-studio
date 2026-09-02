@@ -11,7 +11,7 @@
 
 import { useRef } from "react";
 import { FONTS } from "@/lib/core";
-import { ICONS, type CtaLayer, type Fill, type IconLayer, type Layer, type LogoLayer, type ShapeLayer, type TextLayer } from "@/lib/layers";
+import { ICONS, type CtaLayer, type Fill, type IconLayer, type Layer, type LogoLayer, type ScreenLayer, type ShapeLayer, type TextLayer } from "@/lib/layers";
 import { plainText, resolveLayer, toggleWord, wordFlags } from "@/lib/geometry";
 import type { Align, LayerPatch } from "@/lib/layers";
 import { shrinkImage, useStudio } from "./StudioProvider";
@@ -169,6 +169,14 @@ export function LayersPanel() {
           <button className="mini-btn" onClick={() => st.addLayer("icon")} type="button">
             + Icon
           </button>
+          <button
+            className="mini-btn"
+            title="Drop an app screenshot onto the screen of a phone in the artwork — pin the four corners to the glass"
+            onClick={() => st.addLayer("screen")}
+            type="button"
+          >
+            + App screen
+          </button>
           <button className="mini-btn" onClick={() => st.addLayer("cta")} type="button">
             + Button
           </button>
@@ -296,6 +304,7 @@ function Inspector({ layer }: { layer: Layer }) {
       {layer.kind === "logo" ? <LogoInspector l={rl as LogoLayer} set={set} geo={geo} /> : null}
       {layer.kind === "shape" ? <ShapeInspector l={rl as ShapeLayer} set={set} geo={geo} /> : null}
       {layer.kind === "icon" ? <IconInspector l={rl as IconLayer} set={set} geo={geo} /> : null}
+      {layer.kind === "screen" ? <ScreenInspector l={rl as ScreenLayer} set={set} geo={geo} /> : null}
     </div>
   );
 }
@@ -391,6 +400,47 @@ function TextInspector({ l, set, geo }: { l: TextLayer; set: Set; geo: Geo }) {
         />
       </Field>
       <ColorField label="Colour" value={l.color} onChange={hex => set({ color: hex } as Partial<Layer>)} />
+
+      {/* The spreadsheet vocabulary, because everyone already knows it. Four of
+          these are angles, which is the rotation field; the fifth is a real
+          typographic mode where the letters stay upright and stack. */}
+      <Field label="Direction">
+        <div className="orient-row">
+          {(
+            [
+              { id: "h", label: "Across", glyph: "A", rot: 0, vertical: false },
+              { id: "ccw", label: "Angle up", glyph: "A", rot: -45, vertical: false },
+              { id: "cw", label: "Angle down", glyph: "A", rot: 45, vertical: false },
+              { id: "up", label: "Turn up", glyph: "A", rot: -90, vertical: false },
+              { id: "down", label: "Turn down", glyph: "A", rot: 90, vertical: false },
+              { id: "stack", label: "Stacked", glyph: "A", rot: 0, vertical: true },
+            ] as const
+          ).map(o => {
+            const on = Boolean(l.vertical) === o.vertical && (o.vertical || (l.rotation ?? 0) === o.rot);
+            return (
+              <button
+                key={o.id}
+                className="orient-opt"
+                aria-pressed={on}
+                title={o.label}
+                type="button"
+                onClick={() => {
+                  set({ vertical: o.vertical } as Partial<Layer>);
+                  geo({ rotation: o.rot });
+                }}
+              >
+                <span
+                  className={o.vertical ? "orient-glyph stack" : "orient-glyph"}
+                  style={o.vertical ? undefined : { transform: `rotate(${o.rot}deg)` }}
+                >
+                  {o.vertical ? "A\nB" : "Aa"}
+                </span>
+                <em>{o.label}</em>
+              </button>
+            );
+          })}
+        </div>
+      </Field>
 
       <Collapsible title="Gradient" hint={l.grad?.on ? "on" : "off"}>
         <div className="row" style={{ marginBottom: 10 }}>
@@ -763,6 +813,74 @@ function ShapeInspector({ l, set, geo }: { l: ShapeLayer; set: Set; geo: Geo }) 
           fr.readAsDataURL(f);
         }}
       />
+    </>
+  );
+}
+
+function ScreenInspector({ l, set, geo }: { l: ScreenLayer; set: Set; geo: Geo }) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const reset = () =>
+    geo({
+      corners: [
+        { x: 0, y: 0 },
+        { x: 1, y: 0 },
+        { x: 1, y: 1 },
+        { x: 0, y: 1 },
+      ],
+    });
+  return (
+    <>
+      <p className="hint" style={{ marginTop: 0 }}>
+        Load a screenshot, then drag the four green pins onto the corners of the phone&apos;s glass. The image is
+        warped to match, so a phone held at an angle still looks right.
+      </p>
+      <div className="row" style={{ marginBottom: 10 }}>
+        <MiniBtn onClick={() => fileRef.current?.click()}>{l.src ? "Replace screenshot" : "Load screenshot"}</MiniBtn>
+        {l.src ? <MiniBtn onClick={() => set({ src: null } as Partial<Layer>)}>Remove</MiniBtn> : null}
+        <MiniBtn onClick={reset}>Reset corners</MiniBtn>
+      </div>
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/*"
+        hidden
+        onChange={async e => {
+          const f = e.target.files?.[0];
+          e.target.value = "";
+          if (!f) return;
+          const fr = new FileReader();
+          // 1200px is plenty: the screenshot is warped into a phone-sized slot
+          fr.onload = async ev =>
+            set({ src: await shrinkImage(String(ev.target?.result), 1200) } as Partial<Layer>);
+          fr.readAsDataURL(f);
+        }}
+      />
+      <Field label="Box width" hint={`${l.w}% of frame`}>
+        <input type="range" min={5} max={100} step={1} value={l.w} onChange={e => geo({ w: Number(e.target.value) })} />
+      </Field>
+      <Field label="Box height" hint={`${l.h}% of frame`}>
+        <input type="range" min={5} max={100} step={1} value={l.h} onChange={e => geo({ h: Number(e.target.value) })} />
+      </Field>
+      <Field label="Screen corners" hint={`${l.radius}%`}>
+        <input
+          type="range"
+          min={0}
+          max={30}
+          step={1}
+          value={l.radius}
+          onChange={e => set({ radius: Number(e.target.value) } as Partial<Layer>)}
+        />
+      </Field>
+      <Field label="Glass sheen" hint={l.gloss ? `${l.gloss}%` : "off"}>
+        <input
+          type="range"
+          min={0}
+          max={40}
+          step={1}
+          value={l.gloss}
+          onChange={e => set({ gloss: Number(e.target.value) } as Partial<Layer>)}
+        />
+      </Field>
     </>
   );
 }

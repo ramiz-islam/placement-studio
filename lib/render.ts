@@ -18,6 +18,7 @@
 
 import type { Design, Fit, Placement } from "./core";
 import { CHEVRON, type Fill } from "./layers";
+import { drawQuad, type Pt } from "./perspective";
 import { coverRect, lineWidth, placeAll, plateBox, rgba, safeF, type LayoutContext, type Placed } from "./geometry";
 
 export type ExportFormat = "image/png" | "image/jpeg" | "image/webp";
@@ -44,7 +45,7 @@ export interface RenderOpts {
 export async function preloadLayerImages(design: Design): Promise<Map<string, HTMLImageElement>> {
   const srcs = new Set<string>();
   for (const l of design.layers) {
-    if ((l.kind === "icon" || l.kind === "shape") && l.src) srcs.add(l.src);
+    if ((l.kind === "icon" || l.kind === "shape" || l.kind === "screen") && l.src) srcs.add(l.src);
   }
   const out = new Map<string, HTMLImageElement>();
   await Promise.all(
@@ -259,6 +260,16 @@ function drawLayerBody(
         shapePath(g, l.shape, ox, oy, dw, dh, l.radius);
         g.fill();
       });
+      return;
+    }
+
+    case "screen": {
+      const l = p.layer;
+      const shot = l.src ? logoCache.get(l.src) : null;
+      if (!shot) return;
+      // the same homography the preview used, in device pixels this time
+      const quad = l.corners.map(c => ({ x: x + c.x * w, y: y + c.y * h })) as [Pt, Pt, Pt, Pt];
+      drawQuad(g, shot, shot.naturalWidth, shot.naturalHeight, quad);
       return;
     }
 

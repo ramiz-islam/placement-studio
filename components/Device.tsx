@@ -9,7 +9,7 @@
  */
 
 import { useRef } from "react";
-import type { Design, Placement } from "@/lib/core";
+import type { Design, Placement, Pt } from "@/lib/core";
 import { CHEVRON, ICON, type Fill, type Layer, type LayerPatch } from "@/lib/layers";
 import {
   clamp,
@@ -24,6 +24,7 @@ import {
   type Placed,
 } from "@/lib/geometry";
 import type { Collision } from "@/lib/analysis";
+import { cssMatrix, squareToQuad } from "@/lib/perspective";
 import { Chrome } from "./Chrome";
 
 const pc = (n: number) => `${(n * 100).toFixed(3)}%`;
@@ -60,6 +61,9 @@ function resizeSpec(l: Layer): ResizeSpec {
     case "shape":
       // a band spans the frame, so an angle would only break that
       return l.shape === "band" ? { height: "h", rotate: false } : { width: "w", height: "h", rotate: true };
+    case "screen":
+      // the four corner pins do the shaping, so edge resizing would fight them
+      return { width: "w", height: "h" };
   }
 }
 
@@ -364,6 +368,51 @@ export function Device(props: DeviceProps) {
   }
 
   /**
+   * Pin one corner of a screen layer.
+   *
+   * The corners are stored as fractions of the layer's own box, so dragging or
+   * resizing the layer carries the whole quad with it and only this gesture
+   * changes its shape. Corners are allowed outside 0..1 — a phone screen often
+   * needs a corner pulled past the box to line up with the glass.
+   */
+  function startCorner(layer: Layer, index: number, ev: React.PointerEvent<HTMLSpanElement>) {
+    if (small || !onLayerResize || layer.kind !== "screen") return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    const device = deviceRef.current;
+    if (!device) return;
+    const rect = device.getBoundingClientRect();
+    const boxW = (layer.w / 100) * rect.width;
+    const boxH = (layer.h / 100) * rect.height;
+    const start = layer.corners[index];
+    const px = ev.clientX;
+    const py = ev.clientY;
+    try {
+      (ev.currentTarget as HTMLElement).setPointerCapture(ev.pointerId);
+    } catch {
+      /* synthetic pointer; the window listeners still work */
+    }
+
+    const move = (e: PointerEvent) => {
+      const next = layer.corners.map((c, i) =>
+        i === index
+          ? {
+              x: Math.round((start.x + (e.clientX - px) / Math.max(1, boxW)) * 1000) / 1000,
+              y: Math.round((start.y + (e.clientY - py) / Math.max(1, boxH)) * 1000) / 1000,
+            }
+          : c
+      ) as [Pt, Pt, Pt, Pt];
+      onLayerResize!(layer.id, { corners: next });
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  }
+
+  /**
    * Spin a layer to any angle by dragging the handle above it. Holding shift
    * snaps to 15° steps, which is how you actually get a clean 45.
    */
@@ -514,6 +563,92 @@ export function Device(props: DeviceProps) {
         );
       }
 
+      case "screen": {
+        const q = l.corners;
+        const wPx = (l.w / 100) * (deviceRef.current?.clientWidth ?? 1000);
+        const hPx = (l.h / 100) * (deviceRef.current?.clientHeight ?? 1000);
+        const m = squareToQuad([
+          { x: q[0].x * wPx, y: q[0].y * hPx },
+          { x: q[1].x * wPx, y: q[1].y * hPx },
+          { x: q[2].x * wPx, y: q[2].y * hPx },
+          { x: q[3].x * wPx, y: q[3].y * hPx },
+        ]);
+        const isPrimary = selectedIds?.length ? selectedIds[selectedIds.length - 1] === l.id : false;
+        return (
+          <div
+            key={l.id}
+            data-layer={l.id}
+            className={cls}
+            onPointerDown={onPointerDown}
+            style={{ ...base, width: pc(p.box.w), height: pc(p.box.h) }}
+          >
+            <span
+              aria-hidden="true"
+              style={{
+                position: "absolute",
+                inset: 0,
+                transformOrigin: "0 0",
+                transform: m && wPx > 0 ? cssMatrix(m, wPx, hPx) : undefined,
+                borderRadius: `${l.radius}%`,
+                overflow: "hidden",
+                background: l.src ? undefined : "rgba(20,22,82,.35)",
+                boxShadow: l.src ? "0 0 0 1px rgba(0,0,0,.35)" : "inset 0 0 0 1px rgba(255,255,255,.5)",
+              }}
+            >
+              {l.src ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={l.src}
+                  alt={l.name}
+                  style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                />
+              ) : (
+                <span
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    display: "grid",
+                    placeItems: "center",
+                    fontSize: "3cqw",
+                    fontWeight: 700,
+                    color: "#fff",
+                    textAlign: "center",
+                    padding: "2cqw",
+                  }}
+                >
+                  Load a screenshot
+                </span>
+              )}
+              {l.gloss > 0 && l.src ? (
+                <span
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    background: `linear-gradient(118deg, rgba(255,255,255,${
+                      l.gloss / 100
+                    }) 0%, rgba(255,255,255,0) 42%)`,
+                  }}
+                />
+              ) : null}
+            </span>
+
+            {/* the corner pins, drawn where the corners actually are */}
+            {!small && isPrimary && onLayerResize
+              ? q.map((c, i) => (
+                  <span
+                    key={i}
+                    className="rh rh-pin"
+                    title={["Top left", "Top right", "Bottom right", "Bottom left"][i] + " corner"}
+                    style={{ left: `${c.x * 100}%`, top: `${c.y * 100}%` }}
+                    onPointerDown={e => startCorner(l, i, e)}
+                  />
+                ))
+              : null}
+            {handles(l)}
+          </div>
+        );
+      }
+
       case "icon":
         return (
           <div
@@ -648,6 +783,8 @@ export function Device(props: DeviceProps) {
               letterSpacing: l.tracking ? `${l.tracking}em` : undefined,
               textAlign: m.align,
               textShadow: "0 .3cqw 1.4cqw rgba(0,0,0,.28)",
+              // stacked text is already one glyph per line, so it only needs centring
+              ...(l.vertical ? { textAlign: "center" as const } : null),
               transform: l.rotation ? `rotate(${l.rotation}deg)` : undefined,
               // background-clip paints the glyphs with the gradient; the text
               // has to go transparent for it to show through

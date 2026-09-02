@@ -15,7 +15,7 @@
 
 import type { Pt } from "./core";
 
-export type LayerKind = "text" | "cta" | "logo" | "shape" | "icon";
+export type LayerKind = "text" | "cta" | "logo" | "shape" | "icon" | "screen";
 
 /**
  * What direct manipulation on the frame can override for a single placement.
@@ -24,6 +24,8 @@ export type LayerKind = "text" | "cta" | "logo" | "shape" | "icon";
  */
 export interface LayerPatch {
   pos?: Pt;
+  /** per-placement corner pinning for a screen layer */
+  corners?: [Pt, Pt, Pt, Pt];
   /** width, % of frame — shapes, logos, icons */
   w?: number;
   /** height, % of frame — shapes */
@@ -116,6 +118,16 @@ export interface TextLayer extends Base {
    * invisible once the whole block is painted with one gradient.
    */
   grad: { on: boolean; to: string; angle: number };
+  /**
+   * Stacked glyphs running down the frame, each one upright — what a
+   * spreadsheet calls "vertical text", as opposed to a rotated block.
+   *
+   * Distinct from `rotation`: rotating a headline 90° turns the whole line on
+   * its side, so you read it with your head tilted. This keeps every letter the
+   * right way up and stacks them, which is what you want down the edge of a
+   * story frame.
+   */
+  vertical?: boolean;
 }
 
 export interface CtaLayer extends Base {
@@ -178,6 +190,32 @@ export interface ShapeLayer extends Base {
   srcFit?: "cover" | "contain";
 }
 
+/**
+ * An app screenshot mapped onto the screen of a phone in the artwork.
+ *
+ * The most common shot in app advertising, and the one thing position, size and
+ * rotation cannot do: a phone held at an angle shows its screen as a trapezium.
+ * So the four corners are yours to place, and the screenshot is warped to meet
+ * them.
+ */
+export interface ScreenLayer extends Base {
+  kind: "screen";
+  src: string | null;
+  /** % of frame width and height — the box the corners are measured inside */
+  w: number;
+  h: number;
+  /**
+   * Top-left, top-right, bottom-right, bottom-left, each a fraction of the
+   * layer's own box. Kept box-relative so dragging and resizing the layer move
+   * the whole quad, and only the corner handles change its shape.
+   */
+  corners: [Pt, Pt, Pt, Pt];
+  /** rounded screen corners, % of the shorter side */
+  radius: number;
+  /** a hint of screen glass, 0 turns it off */
+  gloss: number;
+}
+
 export interface IconLayer extends Base {
   kind: "icon";
   /** a built-in id from ICONS, or "custom" when `src` is set */
@@ -190,7 +228,7 @@ export interface IconLayer extends Base {
   scrim: Plate;
 }
 
-export type Layer = TextLayer | CtaLayer | LogoLayer | ShapeLayer | IconLayer;
+export type Layer = TextLayer | CtaLayer | LogoLayer | ShapeLayer | IconLayer | ScreenLayer;
 
 /* ============================================================
    BUILT-IN ICONS
@@ -300,6 +338,29 @@ export function shapeLayer(over: Partial<ShapeLayer> = {}): ShapeLayer {
     radius: 8,
     rotation: 0,
     src: null,
+    ...over,
+  };
+}
+
+export function screenLayer(over: Partial<ScreenLayer> = {}): ScreenLayer {
+  return {
+    id: layerId("screen"),
+    kind: "screen",
+    name: "App screen",
+    on: true,
+    // a phone-shaped box in the middle, ready to be pinned to the real one
+    pos: { x: 0.3, y: 0.3 },
+    w: 34,
+    h: 38,
+    src: null,
+    corners: [
+      { x: 0, y: 0 },
+      { x: 1, y: 0 },
+      { x: 1, y: 1 },
+      { x: 0, y: 1 },
+    ],
+    radius: 6,
+    gloss: 12,
     ...over,
   };
 }
@@ -417,4 +478,5 @@ export const LAYER_LABEL: Record<LayerKind, string> = {
   logo: "Logo",
   shape: "Shape",
   icon: "Icon",
+  screen: "App screen",
 };
