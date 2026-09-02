@@ -2,27 +2,10 @@
 
 import { PLACEMENTS } from "@/lib/core";
 import { RATIO_LABEL, fitFor, masterZone } from "@/lib/geometry";
-import { PASS_MARK, audit, grade, type Level } from "@/lib/audit";
+import { PASS_MARK, PENALTY_ROWS, audit, grade, type Level } from "@/lib/audit";
 import { useStudio } from "./StudioProvider";
 import { Collapsible } from "./ui";
 
-/**
- * The published cost of every check, so the score can be argued with. Kept in
- * step with lib/audit.ts by hand — there are ten of them and they change
- * rarely, which is cheaper than making the audit self-describing.
- */
-const SCORE_TABLE: { what: string; cost: string }[] = [
-  { what: "Artwork in a reserved band", cost: "up to -30" },
-  { what: "File over the platform ceiling", cost: "-12" },
-  { what: "Layer outside the safe box", cost: "-8 each" },
-  { what: "Heavy crop from the wrong ratio", cost: "-8" },
-  { what: "Below the platform's pixel spec", cost: "-6" },
-  { what: "Focal point inside a reserved band", cost: "-6" },
-  { what: "Type under 4.5:1 on its background", cost: "-4 each" },
-  { what: "Type too small to read on a phone", cost: "-4 each" },
-  { what: "Resolution borderline", cost: "-5" },
-  { what: "Letterbox bars on a full-bleed slot", cost: "-4" },
-];
 
 const pc = (n: number) => `${(n * 100).toFixed(1)}%`;
 const icoFor = (l: Level) => (l === "ok" ? "i-check" : l === "warn" ? "i-warn" : "i-x");
@@ -162,9 +145,9 @@ export function AuditPanel() {
               </p>
               <table className="spec-table">
                 <tbody>
-                  {SCORE_TABLE.map(r => (
-                    <tr key={r.what}>
-                      <th>{r.what}</th>
+                  {PENALTY_ROWS.map(r => (
+                    <tr key={r.label}>
+                      <th>{r.label}</th>
                       <td>{r.cost}</td>
                     </tr>
                   ))}
