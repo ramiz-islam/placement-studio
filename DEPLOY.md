@@ -83,9 +83,31 @@ To try it on the real Workers runtime locally before or after deploying:
 npm run cf:preview
 ```
 
-### Connecting it to GitHub for automatic deploys (optional)
+### Why a green `git push` does not update the live site
 
-Entirely optional — `npm run cf:deploy` already ships. This only makes pushes deploy themselves.
+`git push` only reaches GitHub. Nothing was watching GitHub, so the Worker stayed on whatever
+`npm run cf:deploy` last put there, and `Everything up-to-date` said nothing at all about the live URL.
+Two ways to close that gap — pick one.
+
+**Either: GitHub Actions (in the repo, `.github/workflows/deploy.yml`).** Already committed. Add two repository
+secrets and every push to `main` deploys:
+
+**GitHub → Settings → Secrets and variables → Actions → New repository secret**
+
+| Name | Where to get it |
+|---|---|
+| `CLOUDFLARE_API_TOKEN` | Cloudflare → My Profile → API Tokens → Create Token → use the **Edit Cloudflare Workers** template |
+| `CLOUDFLARE_ACCOUNT_ID` | the hex id in any Workers dashboard URL, `dash.cloudflare.com/<account id>/workers` |
+
+Until those exist the workflow will run and fail on the deploy step, which is a louder and more useful signal than
+silently drifting. Worker secrets and the R2 binding are untouched by it.
+
+**Or: Cloudflare's own build integration** (below). Same outcome, configured in the dashboard instead of the repo.
+Do not enable both, or one push deploys twice.
+
+### Connecting it to GitHub for automatic deploys (the Cloudflare side)
+
+Optional if you use the Actions workflow above. `npm run cf:deploy` also still ships from your machine.
 
 **Connect Git to the Worker that already exists.** Do not create a new project: the "Create" flow leads to Cloudflare
 **Pages**, a different product that has no deploy-command field and no Workers bindings, and it would stand up a
@@ -107,6 +129,28 @@ Then in the prompts:
 
 **Nothing needs re-entering.** Secrets live on the Worker, which is why redeploys have not needed them re-set, and the
 R2 binding comes from `wrangler.jsonc` on every deploy. Connecting Git adds CI; it does not replace the Worker.
+
+---
+
+## Changing the URL
+
+`placement-studio.ramiz-b05.workers.dev` is two separate things joined by a dot: the **Worker name** and your
+account's **workers.dev subdomain**.
+
+**A custom domain — the one worth doing.** Any domain already on Cloudflare DNS can point straight at the Worker:
+
+**Workers & Pages → `placement-studio` → Settings → Domains & Routes → Add → Custom domain**
+
+Enter something like `studio.carswitch.com`. Cloudflare creates the DNS record and the certificate. The
+`workers.dev` URL keeps working alongside it, and can then be switched off on the same screen.
+
+**Renaming the Worker** changes the first half. Edit `name` in `wrangler.jsonc` and deploy — but understand what
+that does: Cloudflare has no rename. A new name is a **new Worker**, so it starts with no secrets and no R2 binding,
+the R2 binding returns from `wrangler.jsonc` but the three secrets must be set again with `npx wrangler secret put`,
+and the old Worker keeps running at the old URL until you delete it. Fine to do; just not a one-field change.
+
+**Changing the `ramiz-b05` half** is an account-level setting and renames the URL of every Worker on the account
+at once. Rarely what you want.
 
 ---
 

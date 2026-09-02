@@ -1,0 +1,49 @@
+# Push to main, and the live Worker updates.
+#
+# Without this, `git push` only ever reached GitHub: the Worker was deployed by
+# running `npm run cf:deploy` on a laptop, so the live site silently drifted
+# behind the repo. Nothing about a green push told you that.
+#
+# Needs two repository secrets (Settings -> Secrets and variables -> Actions):
+#   CLOUDFLARE_API_TOKEN   an API token with the "Edit Cloudflare Workers" template
+#   CLOUDFLARE_ACCOUNT_ID  the account id from the Workers dashboard URL
+#
+# Worker secrets (SITE_PASSWORD, PS_OPENAI_API_KEY, PS_ANTHROPIC_API_KEY) and the
+# R2 binding live in Cloudflare and survive a deploy — they are not set here, so
+# they never appear in this file or in a build log.
+name: Deploy to Cloudflare
+
+on:
+  push:
+    branches: [main]
+  # so a deploy can be forced from the Actions tab without an empty commit
+  workflow_dispatch:
+
+# one deploy at a time; a newer push should win rather than race
+concurrency:
+  group: deploy-worker
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # fail here rather than shipping a build that does not typecheck
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Build and deploy
+        run: npx opennextjs-cloudflare build && npx opennextjs-cloudflare deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
