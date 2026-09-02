@@ -134,15 +134,16 @@ export function CanvasToolbar() {
 
       {size ? (
         <>
-          <button className="cb" title="Smaller" onClick={() => bump(-1)} type="button">
+          <button className="cb" title="Smaller" data-label="Smaller" onClick={() => bump(-1)} type="button">
             −
           </button>
-          <button className="cb" title="Bigger" onClick={() => bump(1)} type="button">
+          <button className="cb" title="Bigger" data-label="Bigger" onClick={() => bump(1)} type="button">
             +
           </button>
         </>
       ) : null}
 
+      {size ? <span className="cb-sep" aria-hidden="true" /> : null}
       {ink ? (
         <label className="cb cb-ink" title="Colour">
           <span style={{ background: ink.value }} />
@@ -156,13 +157,13 @@ export function CanvasToolbar() {
 
       {canAlign ? (
         <>
-          <button className="cb" title="Align left" onClick={() => st.align("left")} type="button">
+          <button className="cb" title="Align left" data-label="Align left" onClick={() => st.align("left")} type="button">
             ⇤
           </button>
-          <button className="cb" title="Centre" onClick={() => st.align("hcenter")} type="button">
+          <button className="cb" title="Centre" data-label="Centre" onClick={() => st.align("hcenter")} type="button">
             ↔
           </button>
-          <button className="cb" title="Align right" onClick={() => st.align("right")} type="button">
+          <button className="cb" title="Align right" data-label="Align right" onClick={() => st.align("right")} type="button">
             ⇥
           </button>
         </>
@@ -184,13 +185,14 @@ export function CanvasToolbar() {
         </button>
       ) : null}
 
-      <button className="cb" title="Send behind" onClick={() => st.toBack(id)} type="button">
+      <span className="cb-sep" aria-hidden="true" />
+      <button className="cb" title="Send behind" data-label="Send behind" onClick={() => st.toBack(id)} type="button">
         ⤓
       </button>
-      <button className="cb" title="Duplicate" onClick={() => st.duplicateLayer(id)} type="button">
+      <button className="cb" title="Duplicate" data-label="Duplicate" onClick={() => st.duplicateLayer(id)} type="button">
         ⧉
       </button>
-      <button className="cb danger" title="Delete" onClick={() => st.removeLayer(id)} type="button">
+      <button className="cb danger" title="Delete" data-label="Delete" onClick={() => st.removeLayer(id)} type="button">
         ✕
       </button>
     </div>

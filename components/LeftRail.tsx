@@ -3,6 +3,7 @@
 import { useRef } from "react";
 import { PRESETS, type Lang } from "@/lib/core";
 import { RATIO_LABEL } from "@/lib/geometry";
+import { LAYOUTS } from "@/lib/layers";
 import { useStudio } from "./StudioProvider";
 import { Field, MiniBtn } from "./ui";
 import { LayersPanel } from "./LayersPanel";
@@ -114,6 +115,27 @@ export function LeftRail({ onGenerate }: { onGenerate: () => void }) {
             </p>
           </>
         ) : null}
+        {/* Picking a layout is the fastest route to something that looks made
+            rather than assembled, so it sits above the copy tools. */}
+        <div className="p-head" style={{ marginTop: 16 }}>
+          <span className="p-title">Layout</span>
+        </div>
+        <div className="layout-pick">
+          {LAYOUTS.map(l => (
+            <button
+              key={l.id}
+              className="layout-opt"
+              aria-pressed={st.layout === l.id}
+              onClick={() => st.applyLayout(l.id)}
+              type="button"
+            >
+              <b>{l.name}</b>
+              <span>{l.note}</span>
+            </button>
+          ))}
+        </div>
+        <p className="hint">Changing layout rebuilds the layers, so do it before you start moving things.</p>
+
         <div className="row" style={{ marginTop: 10 }}>
           <button className="mini-btn" onClick={onGenerate} type="button">
             Write copy with Claude

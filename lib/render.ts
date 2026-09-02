@@ -17,7 +17,7 @@
  */
 
 import type { Design, Fit, Placement } from "./core";
-import type { Fill } from "./layers";
+import { CHEVRON, type Fill } from "./layers";
 import { coverRect, lineWidth, placeAll, plateBox, rgba, safeF, type LayoutContext, type Placed } from "./geometry";
 
 export type ExportFormat = "image/png" | "image/jpeg" | "image/webp";
@@ -90,6 +90,17 @@ function shapePath(g: CanvasRenderingContext2D, shape: string, x: number, y: num
   if (shape === "ellipse") {
     g.beginPath();
     g.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2);
+    g.closePath();
+    return;
+  }
+  if (shape === "chevron") {
+    g.beginPath();
+    CHEVRON.forEach(([cx, cy], i) => {
+      const px = x + cx * w;
+      const py = y + cy * h;
+      if (i === 0) g.moveTo(px, py);
+      else g.lineTo(px, py);
+    });
     g.closePath();
     return;
   }

@@ -666,6 +666,7 @@ function ShapeInspector({ l, set, geo }: { l: ShapeLayer; set: Set; geo: Geo }) 
           <option value="rect">Rectangle</option>
           <option value="ellipse">Ellipse</option>
           <option value="triangle">Triangle</option>
+          <option value="chevron">Chevron — brand block</option>
           <option value="band">Band — full frame width</option>
           <option value="line">Line</option>
         </select>

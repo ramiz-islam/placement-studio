@@ -139,7 +139,21 @@ export interface LogoLayer extends Base {
   band: { on: boolean; fill: Fill; pad: number };
 }
 
-export type ShapeKind = "rect" | "ellipse" | "triangle" | "band" | "line";
+/**
+ * `chevron` is the brand block: a rectangle that comes to a point on one edge,
+ * the shape CarSwitch ads use to carve a clean field for the logo and headline
+ * out of a photograph. Rotate it to point the other way.
+ */
+export type ShapeKind = "rect" | "ellipse" | "triangle" | "chevron" | "band" | "line";
+
+/** The chevron outline, as fractions of the shape's own box. */
+export const CHEVRON: [number, number][] = [
+  [0, 0],
+  [0.62, 0],
+  [1, 0.5],
+  [0.62, 1],
+  [0, 1],
+];
 
 export interface ShapeLayer extends Base {
   kind: "shape";
@@ -317,6 +331,92 @@ export const bandLayer = (over: Partial<ShapeLayer> = {}) =>
  * The default stack, matching what the tool looked like before layers existed:
  * logo, brand eyebrow, headline, CTA. Nothing regresses visually.
  */
+export type LayoutId = "clean" | "brandBlock" | "lowerThird";
+
+export interface LayoutDef {
+  id: LayoutId;
+  name: string;
+  note: string;
+}
+
+export const LAYOUTS: LayoutDef[] = [
+  { id: "clean", name: "Clean", note: "Type straight on the artwork. Needs a quiet picture." },
+  { id: "brandBlock", name: "Brand block", note: "A Night Sky chevron carves a field out of the photo." },
+  { id: "lowerThird", name: "Lower third", note: "A strip across the base. Works on any picture." },
+];
+
+/**
+ * A starting stack.
+ *
+ * Type dropped straight onto a photograph only works when the photograph is
+ * quiet, which most are not — so the other two bring their own background. The
+ * brand block is the CarSwitch chevron: one Night Sky shape holding the logo
+ * and the headline, with the picture doing the work on the other side.
+ */
+export function layoutStack(
+  id: LayoutId,
+  d: NewLayerDefaults,
+  brand: string,
+  head: string,
+  cta: string
+): Layer[] {
+  if (id === "clean") return defaultStack(d, brand, head, cta);
+
+  if (id === "brandBlock") {
+    return [
+      shapeLayer({
+        name: "Brand block",
+        shape: "chevron",
+        w: 62,
+        h: 100,
+        pos: { x: -0.06, y: 0 },
+        fill: solid("#141652", 100),
+        radius: 0,
+      }),
+      logoLayer({ pos: { x: 0.07, y: 0.06 }, w: 34 }),
+      textLayer(d, {
+        name: "Headline",
+        text: head,
+        size: 7.4,
+        blockW: 44,
+        pos: { x: 0.07, y: 0.2 },
+        lineHeight: 1.04,
+      }),
+      textLayer(d, {
+        name: "Brand line",
+        text: brand,
+        size: 3,
+        tracking: 0.12,
+        upper: true,
+        blockW: 44,
+        pos: { x: 0.07, y: 0.47 },
+      }),
+      ctaLayer(d, { text: cta, pos: { x: 0.07, y: 0.56 } }),
+    ];
+  }
+
+  return [
+    shapeLayer({
+      name: "Base strip",
+      shape: "band",
+      h: 30,
+      pos: { x: 0, y: 0.7 },
+      fill: { color: "#141652", color2: "#141652", angle: 90, opacity: 96 },
+      radius: 0,
+    }),
+    logoLayer({ pos: { x: 0.06, y: 0.05 }, w: 28 }),
+    textLayer(d, {
+      name: "Headline",
+      text: head,
+      size: 6,
+      blockW: 78,
+      pos: { x: 0.06, y: 0.74 },
+      lineHeight: 1.06,
+    }),
+    ctaLayer(d, { text: cta, pos: { x: 0.06, y: 0.88 } }),
+  ];
+}
+
 export function defaultStack(d: NewLayerDefaults, brand: string, head: string, cta: string): Layer[] {
   return [
     logoLayer(),

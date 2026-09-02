@@ -236,6 +236,68 @@ export function logoIsLight(img: HTMLImageElement | null): boolean {
   }
 }
 
+/**
+ * Crop the transparent border off a logo.
+ *
+ * A wordmark exported with breathing room is mostly empty pixels, and every
+ * measurement downstream is taken from the image box: the layer's height comes
+ * from its aspect ratio, and the audit asks whether that box clears the safe
+ * zone. So a logo whose ink sat well inside the reserved band still failed,
+ * because the invisible padding did not. Trimming once here means the box is
+ * the ink, and nothing else needs to know about it.
+ *
+ * Returns the original source when there is nothing to trim, so an opaque logo
+ * costs one canvas read and no re-encode.
+ */
+export function trimTransparent(src: string): Promise<string> {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onerror = () => resolve(src);
+    img.onload = () => {
+      try {
+        const w = img.naturalWidth;
+        const h = img.naturalHeight;
+        if (!w || !h) return resolve(src);
+        const c = document.createElement("canvas");
+        c.width = w;
+        c.height = h;
+        const g = c.getContext("2d", { willReadFrequently: true })!;
+        g.drawImage(img, 0, 0);
+        const d = g.getImageData(0, 0, w, h).data;
+
+        let top = h;
+        let left = w;
+        let right = -1;
+        let bottom = -1;
+        for (let y = 0; y < h; y++) {
+          for (let x = 0; x < w; x++) {
+            // 8/255 ignores the near-invisible fringe antialiasing leaves behind
+            if (d[(y * w + x) * 4 + 3] < 8) continue;
+            if (x < left) left = x;
+            if (x > right) right = x;
+            if (y < top) top = y;
+            if (y > bottom) bottom = y;
+          }
+        }
+        if (right < 0 || bottom < 0) return resolve(src);
+        const tw = right - left + 1;
+        const th = bottom - top + 1;
+        // a couple of pixels either side is not worth a re-encode
+        if (tw >= w - 2 && th >= h - 2) return resolve(src);
+
+        const out = document.createElement("canvas");
+        out.width = tw;
+        out.height = th;
+        out.getContext("2d")!.drawImage(c, left, top, tw, th, 0, 0, tw, th);
+        resolve(out.toDataURL("image/png"));
+      } catch {
+        resolve(src);
+      }
+    };
+    img.src = src;
+  });
+}
+
 /** Darkened average of the edge pixels — a believable letterbox colour. */
 export function samplePad(img: HTMLImageElement): string {
   const c = document.createElement("canvas");

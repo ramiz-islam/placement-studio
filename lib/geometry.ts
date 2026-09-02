@@ -293,10 +293,25 @@ export type Metrics = TextMetrics | CtaMetrics | LogoMetrics | ShapeMetrics | Ic
 
 export interface Placed {
   layer: Layer;
-  /** in fractions of the placement canvas */
+  /** the layout box, in fractions of the placement canvas */
   box: Box;
+  /**
+   * What is actually painted, when that is smaller than the layout box.
+   *
+   * A text block is as wide as `blockW` whether or not the words fill it, so a
+   * left-aligned headline in an 80% block reported a box crossing the right
+   * reserved band while the glyphs stopped well short of it. `box` still drives
+   * dragging, scrims and alignment — the things that should follow the block —
+   * and `ink` is what the audit measures, because that is what a viewer sees.
+   *
+   * Absent means the two are the same.
+   */
+  ink?: Box;
   metrics: Metrics;
 }
+
+/** What is really painted: the ink box when there is one, else the layout box. */
+export const inkOf = (p: Placed): Box => p.ink ?? p.box;
 
 export interface LayoutContext {
   lang: Lang;
@@ -326,9 +341,19 @@ export function place(pl: Placement, d: Design, raw: Layer, c: LayoutContext, pl
         spaceW,
         blockPx
       );
+      // the widest line is the real extent; where it sits depends on alignment
+      const widest = lines.reduce((a, ln) => Math.max(a, lineWidth(ln, spaceW)), 0);
+      const slack = Math.max(0, blockPx - widest);
+      const inkDX = layer.align === "center" ? slack / 2 : layer.align === "right" ? slack : 0;
       return {
         layer,
         box: { x: pos.x, y: pos.y, w: layer.blockW / 100, h: (lines.length * sizePx * lh) / H },
+        ink: {
+          x: pos.x + (rtl ? slack - inkDX : inkDX) / W,
+          y: pos.y,
+          w: widest / W,
+          h: (lines.length * sizePx * lh) / H,
+        },
         metrics: {
           kind: "text",
           align: layer.align ?? (rtl ? "right" : "left"),

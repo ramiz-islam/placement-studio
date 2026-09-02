@@ -33,12 +33,15 @@ import {
   logoLayer,
   shapeLayer,
   textLayer,
+  LAYOUTS,
+  layoutStack,
   type Layer,
   type LayerKind,
   type LayerPatch,
+  type LayoutId,
   type NewLayerDefaults,
 } from "@/lib/layers";
-import { clearAnalysisCache, detailMap, logoIsLight, samplePad } from "@/lib/analysis";
+import { clearAnalysisCache, detailMap, logoIsLight, samplePad, trimTransparent } from "@/lib/analysis";
 import { autoLayout } from "@/lib/autolayout";
 import {
   alignedPositions,
@@ -86,6 +89,8 @@ export interface StudioState {
   past: HistEntry[];
   future: Design[];
   toast: string | null;
+  /** which starting layout is in play, for the picker's pressed state */
+  layout: LayoutId;
 }
 
 export interface Studio extends StudioState {
@@ -138,6 +143,9 @@ export interface Studio extends StudioState {
   moveLayer: (placementId: string, layerId: string, x: number, y: number) => void;
   /** apply one delta to every selected layer except the one already moved */
   moveSelected: (placementId: string, dx: number, dy: number, exceptId?: string) => void;
+  /** swap in a starting layout, then place it against the artwork */
+  applyLayout: (id: LayoutId) => void;
+  layout: LayoutId;
   /** place the copy and logo clear of the busiest artwork, here */
   autoPlaceHere: () => void;
   /** the same, worked out separately for every placement */
@@ -191,6 +199,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     past: [],
     future: [],
     toast: null,
+    layout: "clean",
   }));
   const [kitReady, setKitReady] = useState(false);
 
@@ -891,6 +900,29 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
   };
 
   /**
+   * Replace the layer stack with a starting layout and immediately place it
+   * against the artwork, so picking one is a finished result rather than a pile
+   * of layers at default coordinates.
+   */
+  const applyLayout = useCallback(
+    (id: LayoutId) => {
+      const kd = kitDefaults(s.kit);
+      const pr = PRESETS[s.design.lang] ?? PRESETS.en;
+      const layers = layoutStack(id, kd, s.kit.brand, pr.head, pr.cta);
+      setS(prev => ({
+        ...prev,
+        layout: id,
+        selectedIds: [],
+        design: { ...prev.design, layers, overrides: {}, autoPlaced: {} },
+        past: [...prev.past, { design: prev.design, tag: `layout:${id}`, at: Date.now() }].slice(-HISTORY_LIMIT),
+        future: [],
+      }));
+      say(`${LAYOUTS.find(l => l.id === id)?.name ?? "Layout"} applied`);
+    },
+    [s.kit, s.design.lang, say]
+  );
+
+  /**
    * Place the copy and the logo by looking at the artwork, not just at the
    * platform's reserved bands.
    *
@@ -1052,6 +1084,8 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     canUngroup: s.design.layers.some(l => s.selectedIds.includes(l.id) && Boolean(l.group)),
     moveLayer,
     moveSelected,
+    applyLayout,
+    layout: s.layout,
     autoPlaceHere,
     autoPlaceEverywhere,
     applyToAll,
@@ -1069,9 +1103,15 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
 }
 
 function loadLogoInto(setS: React.Dispatch<React.SetStateAction<StudioState>>, src: string) {
-  const img = new Image();
-  img.onload = () => setS(prev => ({ ...prev, logo: img, logoSrc: src }));
-  img.src = src;
+  // Trim first: the layer's box is derived from the image's aspect ratio, so
+  // transparent padding would inflate the box and fail safe-zone checks the ink
+  // itself passes.
+  void trimTransparent(src).then(trimmed => {
+    const img = new Image();
+    img.onload = () => setS(prev => ({ ...prev, logo: img, logoSrc: trimmed }));
+    img.onerror = () => setS(prev => ({ ...prev, logo: null, logoSrc: null }));
+    img.src = trimmed;
+  });
 }
 
 export function useStudio(): Studio {

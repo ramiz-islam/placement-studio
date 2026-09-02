@@ -10,6 +10,7 @@ import {
   clamp,
   contrastRatio,
   hexLuma,
+  inkOf,
   intrusion,
   placeAll,
   safeF,
@@ -187,7 +188,8 @@ export function audit(input: AuditInput): AuditResult {
       if (l.kind === "shape" && l.shape === "band") continue;
       if (l.kind === "logo" && !logo) continue;
 
-      const hit = intrusion(pl, p.box);
+      // measure what is painted, not the block it is laid out in
+      const hit = intrusion(pl, inkOf(p));
       if (hit.worst > 4) {
         add(
           "bad",

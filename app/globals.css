@@ -558,8 +558,13 @@ textarea[dir=rtl]{text-align:right}
 }
 .rh::after{content:"";position:absolute;inset:-2.6cqw}
 .rh-e{right:-1.7cqw;top:50%;margin-top:-1.7cqw;cursor:ew-resize}
+.rh-w{left:-1.7cqw;top:50%;margin-top:-1.7cqw;cursor:ew-resize}
 .rh-s{bottom:-1.7cqw;left:50%;margin-left:-1.7cqw;cursor:ns-resize}
+.rh-n{top:-1.7cqw;left:50%;margin-left:-1.7cqw;cursor:ns-resize}
 .rh-se{right:-1.7cqw;bottom:-1.7cqw;cursor:nwse-resize}
+.rh-sw{left:-1.7cqw;bottom:-1.7cqw;cursor:nesw-resize}
+.rh-ne{right:-1.7cqw;top:-1.7cqw;cursor:nesw-resize}
+.rh-nw{left:-1.7cqw;top:-1.7cqw;cursor:nwse-resize}
 .rh:hover{background:#fff;border-color:var(--blue-bright)}
 /* text layers have no intrinsic box, so anchor the bottom handle to the content */
 .lay-text{position:absolute}
@@ -635,17 +640,24 @@ textarea[dir=rtl]{text-align:right}
 /* --- the toolbar that follows the selection --------------------------------
    Six buttons over the canvas beat sixty in a rail: bigger, smaller, that
    colour, centre it, tuck it behind, drop it. The rail keeps everything else. */
-.canvas-bar{position:absolute;z-index:60;display:flex;align-items:center;gap:2px;
-  padding:4px 5px;border-radius:10px;background:rgba(14,15,26,.94);
-  border:1px solid rgba(255,255,255,.16);
-  box-shadow:0 10px 28px rgba(0,0,0,.55);backdrop-filter:blur(8px);
+/* A dark floating bar over the artwork, so it sets its own colour rather than
+   inheriting the page's. It used to say color:var(--ink) — a variable that has
+   never existed — which silently inherited the body text: light and legible on
+   the old dark theme, dark navy and invisible on this one. */
+.canvas-bar{position:absolute;z-index:60;display:flex;align-items:center;gap:1px;
+  padding:5px 6px;border-radius:11px;background:rgba(12,14,26,.96);color:#F2F4FB;
+  border:1px solid rgba(255,255,255,.18);
+  box-shadow:0 14px 34px rgba(12,14,40,.45);backdrop-filter:blur(10px);
   animation:cb-in .12s ease-out}
 @keyframes cb-in{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:none}}
-.cb-name{font-size:10.5px;font-weight:600;letter-spacing:.02em;color:var(--muted);
+.cb-name{font-size:10.5px;font-weight:700;letter-spacing:.03em;color:rgba(242,244,251,.62);
   max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:0 5px 0 3px}
-.canvas-bar .cb{width:26px;height:26px;display:grid;place-items:center;border-radius:7px;
-  border:1px solid transparent;background:transparent;color:var(--ink);
-  font-size:14px;line-height:1;cursor:pointer;padding:0}
+.canvas-bar .cb{width:28px;height:28px;display:grid;place-items:center;border-radius:8px;
+  border:1px solid transparent;background:transparent;color:inherit;
+  font-size:15px;line-height:1;cursor:pointer;padding:0}
+/* hairline between the groups, so the strip reads as sets of controls rather
+   than an undifferentiated row of glyphs */
+.canvas-bar .cb-sep{width:1px;align-self:stretch;margin:3px 4px;background:rgba(255,255,255,.18)}
 .canvas-bar .cb:hover{background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.18)}
 .canvas-bar .cb.danger:hover{background:rgba(255,84,80,.22);border-color:var(--coral)}
 .canvas-bar .cb-ink{position:relative;overflow:hidden}
@@ -674,3 +686,26 @@ textarea[dir=rtl]{text-align:right}
   border:1px solid var(--line);border-radius:9px}
 .align-set .mini-btn{border:none;background:transparent;box-shadow:none;padding:4px 10px}
 .align-set .mini-btn:hover{background:var(--ink-750);box-shadow:var(--sh-1)}
+
+/* Native title tooltips are slow and easy to miss, so the bar labels itself on
+   hover: the name of the control appears under the strip. */
+.canvas-bar .cb{position:relative}
+.canvas-bar .cb::after{
+  content:attr(data-label);position:absolute;top:calc(100% + 7px);left:50%;transform:translateX(-50%);
+  font-size:10.5px;font-weight:600;white-space:nowrap;padding:3px 7px;border-radius:6px;
+  background:rgba(12,14,26,.97);color:#F2F4FB;border:1px solid rgba(255,255,255,.16);
+  opacity:0;pointer-events:none;transition:opacity .1s .25s}
+.canvas-bar .cb:hover::after{opacity:1}
+
+/* --- layout picker --------------------------------------------------------
+   Three ways to start. Each says what it is for, because "Clean" only means
+   something once you know it needs a quiet photograph. */
+.layout-pick{display:flex;flex-direction:column;gap:6px}
+.layout-opt{display:flex;flex-direction:column;gap:2px;text-align:left;padding:9px 11px;
+  border:1px solid var(--line);border-radius:10px;background:var(--ink-750);
+  box-shadow:var(--sh-1);transition:all .14s}
+.layout-opt b{font-size:12.5px;font-weight:700;color:var(--text)}
+.layout-opt span{font-size:11px;color:var(--muted);line-height:1.35}
+.layout-opt:hover{border-color:var(--ink-600);box-shadow:var(--sh-2)}
+.layout-opt[aria-pressed="true"]{border-color:var(--blue);background:var(--blue-ghost)}
+.layout-opt[aria-pressed="true"] b{color:var(--blue-deep)}

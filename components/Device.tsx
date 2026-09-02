@@ -10,7 +10,7 @@
 
 import { useRef } from "react";
 import type { Design, Placement } from "@/lib/core";
-import { ICON, type Fill, type Layer, type LayerPatch } from "@/lib/layers";
+import { CHEVRON, ICON, type Fill, type Layer, type LayerPatch } from "@/lib/layers";
 import {
   clamp,
   clampPos,
@@ -33,6 +33,8 @@ const pc = (n: number) => `${(n * 100).toFixed(3)}%`;
  * top-left, so handles grow right and down from where the layer already sits.
  */
 type Dim = "blockW" | "w" | "h" | "size";
+type ResizeEdge = "e" | "w" | "n" | "s" | "se" | "sw" | "ne" | "nw";
+
 interface ResizeSpec {
   /** right edge */
   width?: Dim;
@@ -277,7 +279,20 @@ export function Device(props: DeviceProps) {
     return Math.round(n * 10) / 10;
   }
 
-  function startResize(layer: Layer, edge: "e" | "s" | "se", ev: React.PointerEvent<HTMLSpanElement>) {
+  /**
+   * Resize from any edge or corner.
+   *
+   * There were only three handles — right, bottom, bottom-right — which meant
+   * growing a shape leftwards took a resize followed by a drag to put it back.
+   * The west and north handles pin the opposite edge instead: they change the
+   * size and shift the position by the same amount, so the corner you are not
+   * holding stays where it is.
+   *
+   * Type is the exception. Its height comes from the line count times the font
+   * size, so there is no position offset that keeps the far edge still while
+   * the type rescales; vertical drags on text just scale it.
+   */
+  function startResize(layer: Layer, edge: ResizeEdge, ev: React.PointerEvent<HTMLSpanElement>) {
     if (small || !onLayerResize) return;
     ev.preventDefault();
     ev.stopPropagation();
@@ -295,6 +310,9 @@ export function Device(props: DeviceProps) {
       h: layer.kind === "shape" ? layer.h : 0,
       size: layer.kind === "text" || layer.kind === "cta" ? layer.size : 0,
     };
+    const startPos = posFor(d, pl.id, layer);
+    const west = edge.includes("w");
+    const north = edge.includes("n");
     ev.currentTarget.setPointerCapture(ev.pointerId);
 
     const apply = (e: PointerEvent) => {
@@ -302,26 +320,38 @@ export function Device(props: DeviceProps) {
       const dy = e.clientY - startPy;
       const patch: Record<string, number> = {};
 
-      const wantWidth = edge === "e" || edge === "se";
-      const wantHeight = edge === "s" || edge === "se";
+      const wantWidth = edge.includes("e") || edge.includes("w");
+      const wantHeight = edge.includes("n") || edge.includes("s");
+      // dragging a west or north handle grows the layer the other way
+      const sx = west ? -1 : 1;
+      const sy = north ? -1 : 1;
+      let shiftX = 0;
+      let shiftY = 0;
 
       if (wantWidth && spec.width) {
         const dim = spec.width;
         const next =
           dim === "size"
-            ? startVals.size * (1 + dx / Math.max(40, rect.width * 0.25))
-            : startVals[dim] + (dx / rect.width) * 100;
-        patch[dim] = round1(clamp(next, DIM_RANGE[dim][0], DIM_RANGE[dim][1]));
+            ? startVals.size * (1 + (sx * dx) / Math.max(40, rect.width * 0.25))
+            : startVals[dim] + ((sx * dx) / rect.width) * 100;
+        const val = round1(clamp(next, DIM_RANGE[dim][0], DIM_RANGE[dim][1]));
+        patch[dim] = val;
+        // keep the east edge still: the box grew leftwards by the difference
+        if (west && dim !== "size") shiftX = (startVals[dim] - val) / 100;
       }
       if (wantHeight && spec.height) {
         const dim = spec.height;
         const next =
           dim === "size"
-            ? startVals.size * (1 + dy / Math.max(20, startH))
-            : startVals[dim] + (dy / rect.height) * 100;
-        patch[dim] = round1(clamp(next, DIM_RANGE[dim][0], DIM_RANGE[dim][1]));
+            ? startVals.size * (1 + (sy * dy) / Math.max(20, startH))
+            : startVals[dim] + ((sy * dy) / rect.height) * 100;
+        const val = round1(clamp(next, DIM_RANGE[dim][0], DIM_RANGE[dim][1]));
+        patch[dim] = val;
+        if (north && dim !== "size") shiftY = (startVals[dim] - val) / 100;
       }
-      if (Object.keys(patch).length) onLayerResize!(layer.id, patch as Partial<Layer>);
+      const full: LayerPatch = patch as LayerPatch;
+      if (shiftX || shiftY) full.pos = { x: startPos.x + shiftX, y: startPos.y + shiftY };
+      if (Object.keys(full).length) onLayerResize!(layer.id, full);
     };
 
     const move = (e: PointerEvent) => apply(e);
@@ -374,23 +404,36 @@ export function Device(props: DeviceProps) {
     const spec = resizeSpec(l);
     return (
       <>
-        {spec.width ? (
-          <span
-            className="rh rh-e"
-            title={spec.proportional ? "Drag to scale" : "Drag to set width"}
-            onPointerDown={e => startResize(l, "e", e)}
-          />
-        ) : null}
-        {spec.height ? (
-          <span
-            className="rh rh-s"
-            title={spec.height === "size" ? "Drag to scale the type" : "Drag to set height"}
-            onPointerDown={e => startResize(l, "s", e)}
-          />
-        ) : null}
-        {spec.width && spec.height ? (
-          <span className="rh rh-se" title="Drag to resize" onPointerDown={e => startResize(l, "se", e)} />
-        ) : null}
+        {spec.width
+          ? (["e", "w"] as const).map(edge => (
+              <span
+                key={edge}
+                className={`rh rh-${edge}`}
+                title={spec.proportional ? "Drag to scale" : "Drag to set width"}
+                onPointerDown={e => startResize(l, edge, e)}
+              />
+            ))
+          : null}
+        {spec.height
+          ? (["s", "n"] as const).map(edge => (
+              <span
+                key={edge}
+                className={`rh rh-${edge}`}
+                title={spec.height === "size" ? "Drag to scale the type" : "Drag to set height"}
+                onPointerDown={e => startResize(l, edge, e)}
+              />
+            ))
+          : null}
+        {spec.width && spec.height
+          ? (["se", "sw", "ne", "nw"] as const).map(edge => (
+              <span
+                key={edge}
+                className={`rh rh-${edge}`}
+                title="Drag to resize"
+                onPointerDown={e => startResize(l, edge, e)}
+              />
+            ))
+          : null}
         {spec.rotate ? (
           <span
             className="rh rh-rot"
@@ -415,7 +458,12 @@ export function Device(props: DeviceProps) {
 
     switch (l.kind) {
       case "shape": {
-        const clip = l.shape === "triangle" ? "polygon(50% 0%, 100% 100%, 0% 100%)" : undefined;
+        const clip =
+          l.shape === "triangle"
+            ? "polygon(50% 0%, 100% 100%, 0% 100%)"
+            : l.shape === "chevron"
+              ? `polygon(${CHEVRON.map(([cx, cy]) => `${cx * 100}% ${cy * 100}%`).join(", ")})`
+              : undefined;
         return (
           <div
             key={l.id}
