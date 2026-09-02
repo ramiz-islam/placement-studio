@@ -731,3 +731,11 @@ textarea[dir=rtl]{text-align:right}
 .rh-pin{margin-left:-1.7cqw;margin-top:-1.7cqw;border-radius:.6cqw;background:var(--lime);
   border-color:#4F6B00;cursor:crosshair}
 .rh-pin:hover{background:#fff;border-color:var(--lime)}
+
+/* --- snap guides ---------------------------------------------------------
+   Drawn only while a drag is actually on a line, and in Fields lime so they
+   cannot be mistaken for the coral safe-zone hatching or the blue selection. */
+.snapline{position:absolute;display:none;z-index:58;pointer-events:none;background:var(--lime);
+  box-shadow:0 0 0 .18cqw rgba(20,22,82,.55)}
+.snapline.v{top:0;bottom:0;width:.34cqw;margin-left:-.17cqw}
+.snapline.h{left:0;right:0;height:.34cqw;margin-top:-.17cqw}

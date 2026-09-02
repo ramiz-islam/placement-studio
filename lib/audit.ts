@@ -342,7 +342,11 @@ export function audit(input: AuditInput): AuditResult {
             PENALTIES.smallType.cost
           );
         }
-        if (!l.scrim.on && l.text.trim()) {
+        // a stroke or a shadow does the same job as a scrim: it separates the
+        // glyphs from whatever is behind them, so the raw contrast of ink
+        // against artwork is no longer the whole story
+        const backed = l.scrim.on || l.stroke?.on || l.shadow?.on;
+        if (!backed && l.text.trim()) {
           const bgL = lumaOfRect(map, p.box.x, p.box.y, p.box.w, p.box.h);
           const cr = contrastRatio(hexLuma(l.color), bgL);
           if (cr < 3) {

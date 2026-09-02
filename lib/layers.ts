@@ -128,6 +128,19 @@ export interface TextLayer extends Base {
    * story frame.
    */
   vertical?: boolean;
+  /**
+   * An outline around the glyphs, and a shadow under them.
+   *
+   * Every measurement is a percentage of the font size rather than pixels, so
+   * a headline keeps the same weight of outline when the same design is scaled
+   * from a 1080-wide story to a 1920-wide pre-roll. A pixel value would look
+   * heavy on one and invisible on the other.
+   *
+   * This is the standard fix for type on a busy photograph, and cheaper than a
+   * scrim: it follows the letters instead of boxing them in.
+   */
+  stroke: { on: boolean; color: string; w: number };
+  shadow: { on: boolean; color: string; blur: number; x: number; y: number };
 }
 
 export interface CtaLayer extends Base {
@@ -285,6 +298,8 @@ export function textLayer(d: NewLayerDefaults, over: Partial<TextLayer> = {}): T
     align: "left",
     scrim: noPlate(),
     grad: { on: false, to: d.color2, angle: 90 },
+    stroke: { on: false, color: "#141652", w: 8 },
+    shadow: { on: false, color: "#000000", blur: 18, x: 0, y: 6 },
     ...over,
   };
 }

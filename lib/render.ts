@@ -367,6 +367,27 @@ function drawLayerBody(
 
       g.font = `${m.weight} ${sizePx}px ${m.fontCss}`;
       g.textBaseline = "top";
+
+      // Stroke first, fill second — the same order paint-order gives the
+      // preview. Stroking after the fill would bite into the letterforms.
+      const strokePx = l.stroke?.on ? (sizePx * l.stroke.w) / 100 : 0;
+      if (strokePx > 0) {
+        g.lineJoin = "round";
+        g.miterLimit = 2;
+        g.strokeStyle = l.stroke.color;
+        // canvas centres a stroke on the path, so double it to sit outside
+        g.lineWidth = strokePx * 2;
+      }
+      const withShadow = (draw: () => void) => {
+        if (!l.shadow?.on) return draw();
+        g.save();
+        g.shadowColor = l.shadow.color;
+        g.shadowBlur = (sizePx * l.shadow.blur) / 100;
+        g.shadowOffsetX = (sizePx * l.shadow.x) / 100;
+        g.shadowOffsetY = (sizePx * l.shadow.y) / 100;
+        draw();
+        g.restore();
+      };
       g.textAlign = "left";
       g.direction = m.rtl ? "rtl" : "ltr";
       let ty = y;
@@ -385,11 +406,14 @@ function drawLayerBody(
             // draw glyph by glyph so tracking matches the measured width
             let gx = tx;
             for (const ch of t.text) {
-              g.fillText(ch, gx, ty);
+              const at = gx;
+              if (strokePx > 0) withShadow(() => g.strokeText(ch, at, ty));
+              withShadow(() => g.fillText(ch, at, ty));
               gx += g.measureText(ch).width + track;
             }
           } else {
-            g.fillText(t.text, tx, ty);
+            if (strokePx > 0) withShadow(() => g.strokeText(t.text, tx, ty));
+            withShadow(() => g.fillText(t.text, tx, ty));
           }
           tx += t.w + spaceW;
         }

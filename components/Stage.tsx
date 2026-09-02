@@ -335,7 +335,8 @@ function FocusView({
         </span>
         <span>
           Drag to move · edge handles to resize · <b>click again</b> on stacked layers to reach the one underneath ·{" "}
-          <b>ctrl-click</b> to select several · arrow keys to nudge · click any empty part of the frame to deselect
+          <b>ctrl-click</b> to select several · layers snap to the safe box and to each other, <b>shift</b> to override ·
+          arrow keys to nudge · click any empty part of the frame to deselect
         </span>
       </div>
     </div>

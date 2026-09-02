@@ -14,6 +14,8 @@ import { CHEVRON, ICON, type Fill, type Layer, type LayerPatch } from "@/lib/lay
 import {
   clamp,
   clampPos,
+  snapBox,
+  snapLines,
   intrusion,
   placeAll,
   plateBox,
@@ -221,8 +223,47 @@ export function Device(props: DeviceProps) {
     device.appendChild(read);
 
     const box = { w: el.offsetWidth / rect.width, h: el.offsetHeight / rect.height };
-    const at = (e: PointerEvent) =>
-      clampPos(box, start.x + (e.clientX - start.px) / rect.width, start.y + (e.clientY - start.py) / rect.height);
+    /*
+     * Snapping. The lines are the safe box, the frame's centre and edges, and
+     * every other visible layer's edges and centres. Tolerance is set in device
+     * pixels and converted, so it feels the same on a 300px preview as on a
+     * 440px one instead of being six times looser on the small frame.
+     *
+     * Shift bypasses it — alt-click already means "reach the layer underneath"
+     * and ctrl-click means "add to the selection", so Shift is what is left.
+     */
+    const lines = snapLines(pl, placed, selectedIds?.length ? selectedIds : [layerId]);
+    const tolX = 6 / rect.width;
+    const tolY = 6 / rect.height;
+
+    const gv = document.createElement("div");
+    gv.className = "snapline v";
+    const gh = document.createElement("div");
+    gh.className = "snapline h";
+    device.append(gv, gh);
+
+    let hit: { x: number | null; y: number | null } = { x: null, y: null };
+    const at = (e: PointerEvent) => {
+      const raw = clampPos(
+        box,
+        start.x + (e.clientX - start.px) / rect.width,
+        start.y + (e.clientY - start.py) / rect.height
+      );
+      if (e.shiftKey) {
+        hit = { x: null, y: null };
+        return raw;
+      }
+      const snapped = snapBox({ ...raw, w: box.w, h: box.h }, lines, tolX, tolY);
+      hit = { x: snapped.hitX, y: snapped.hitY };
+      return clampPos(box, snapped.x, snapped.y);
+    };
+
+    const paintGuides = () => {
+      gv.style.display = hit.x === null ? "none" : "block";
+      if (hit.x !== null) gv.style.left = pc(hit.x);
+      gh.style.display = hit.y === null ? "none" : "block";
+      if (hit.y !== null) gh.style.top = pc(hit.y);
+    };
 
     // the other selected layers ride along, updated in the DOM during the drag
     const others =
@@ -247,6 +288,7 @@ export function Device(props: DeviceProps) {
       read.style.left = pc(Math.max(0, x));
       read.style.top = pc(Math.max(0, y - 0.045));
       read.textContent = `${Math.round(x * pl.w)}, ${Math.round(y * pl.h)} px`;
+      paintGuides();
       el.classList.toggle("bad-zone", !isBand && intrusion(pl, { x, y, ...box }).worst > 4);
     };
     const up = (e: PointerEvent) => {
@@ -254,6 +296,8 @@ export function Device(props: DeviceProps) {
       window.removeEventListener("pointerup", up);
       el.classList.remove("grabbing");
       read.remove();
+      gv.remove();
+      gh.remove();
       const { x, y } = at(e);
       // a click that never moved is a selection, not a drag: committing it would
       // silently give this layer a per-placement override it never asked for
@@ -782,7 +826,22 @@ export function Device(props: DeviceProps) {
               lineHeight: m.lh,
               letterSpacing: l.tracking ? `${l.tracking}em` : undefined,
               textAlign: m.align,
-              textShadow: "0 .3cqw 1.4cqw rgba(0,0,0,.28)",
+              // the default is a whisper of shadow for legibility; an explicit
+              // one replaces it rather than stacking on top
+              textShadow: l.shadow?.on
+                ? `${cq((m.sizePx * l.shadow.x) / 100)} ${cq((m.sizePx * l.shadow.y) / 100)} ${cq(
+                    (m.sizePx * l.shadow.blur) / 100
+                  )} ${l.shadow.color}`
+                : "0 .3cqw 1.4cqw rgba(0,0,0,.28)",
+              ...(l.stroke?.on
+                ? {
+                    WebkitTextStrokeWidth: cq((m.sizePx * l.stroke.w) / 100),
+                    WebkitTextStrokeColor: l.stroke.color,
+                    // without this the stroke is centred on the glyph edge and
+                    // eats into the letterform; stroke-then-fill keeps it outside
+                    paintOrder: "stroke fill" as const,
+                  }
+                : null),
               // stacked text is already one glyph per line, so it only needs centring
               ...(l.vertical ? { textAlign: "center" as const } : null),
               transform: l.rotation ? `rotate(${l.rotation}deg)` : undefined,

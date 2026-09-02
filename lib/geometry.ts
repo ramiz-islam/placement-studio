@@ -587,6 +587,69 @@ export function alignedPositions(
  * positions. Bands keep their own vertical position — a full-width strip is
  * furniture, not part of the stack.
  */
+export interface SnapLines {
+  /** vertical lines, as fractions of frame width */
+  x: number[];
+  /** horizontal lines, as fractions of frame height */
+  y: number[];
+}
+
+/**
+ * The lines a dragged layer should stick to: the safe box, the frame's centre
+ * and edges, and the edges and centres of every other visible layer.
+ *
+ * Alignment is most of the work in laying out an ad and it was entirely by eye,
+ * which is why so many layers ended up a pixel or two off the safe box and the
+ * audit kept flagging them. Snapping puts them exactly on the line instead.
+ */
+export function snapLines(pl: Placement, placed: Placed[], exceptIds: string[]): SnapLines {
+  const f = safeF(pl);
+  const x = [0, 0.5, 1, f.l, 1 - f.r];
+  const y = [0, 0.5, 1, f.t, 1 - f.b];
+  for (const p of placed) {
+    if (!p.layer.on || exceptIds.includes(p.layer.id)) continue;
+    const b = p.box;
+    x.push(b.x, b.x + b.w / 2, b.x + b.w);
+    y.push(b.y, b.y + b.h / 2, b.y + b.h);
+  }
+  return { x, y };
+}
+
+/**
+ * Pull a box onto the nearest line, if one is close enough.
+ *
+ * Each of the box's own three anchors — near edge, centre, far edge — is tested
+ * against every line, and the smallest correction inside `tol` wins. Returns
+ * the adjusted position and which lines matched, so the caller can draw them.
+ */
+export function snapBox(
+  box: { x: number; y: number; w: number; h: number },
+  lines: SnapLines,
+  tolX: number,
+  tolY: number
+): { x: number; y: number; hitX: number | null; hitY: number | null } {
+  let bestX: { d: number; line: number } | null = null;
+  for (const anchor of [box.x, box.x + box.w / 2, box.x + box.w]) {
+    for (const line of lines.x) {
+      const d = line - anchor;
+      if (Math.abs(d) <= tolX && (!bestX || Math.abs(d) < Math.abs(bestX.d))) bestX = { d, line };
+    }
+  }
+  let bestY: { d: number; line: number } | null = null;
+  for (const anchor of [box.y, box.y + box.h / 2, box.y + box.h]) {
+    for (const line of lines.y) {
+      const d = line - anchor;
+      if (Math.abs(d) <= tolY && (!bestY || Math.abs(d) < Math.abs(bestY.d))) bestY = { d, line };
+    }
+  }
+  return {
+    x: box.x + (bestX?.d ?? 0),
+    y: box.y + (bestY?.d ?? 0),
+    hitX: bestX?.line ?? null,
+    hitY: bestY?.line ?? null,
+  };
+}
+
 export function stackInside(
   pl: Placement,
   d: Design,

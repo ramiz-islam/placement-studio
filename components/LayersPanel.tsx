@@ -531,6 +531,92 @@ function TextInspector({ l, set, geo }: { l: TextLayer; set: Set; geo: Geo }) {
         </div>
       </Collapsible>
 
+      <Collapsible
+        title="Outline and shadow"
+        hint={[l.stroke?.on && "outline", l.shadow?.on && "shadow"].filter(Boolean).join(" + ") || "off"}
+      >
+        <p className="hint" style={{ marginTop: 0 }}>
+          Both are measured against the type size, so they hold their weight when the same layout is scaled from a
+          1080-wide story to a 1920-wide pre-roll. Usually cheaper than a scrim: they follow the letters instead of
+          boxing them in.
+        </p>
+
+        <div className="row" style={{ marginBottom: 10 }}>
+          <MiniBtn
+            on={l.stroke?.on}
+            onClick={() => set({ stroke: { ...l.stroke, on: !l.stroke?.on } } as Partial<Layer>)}
+          >
+            {l.stroke?.on ? "Outline on" : "Outline off"}
+          </MiniBtn>
+          <MiniBtn
+            on={l.shadow?.on}
+            onClick={() => set({ shadow: { ...l.shadow, on: !l.shadow?.on } } as Partial<Layer>)}
+          >
+            {l.shadow?.on ? "Shadow on" : "Shadow off"}
+          </MiniBtn>
+        </div>
+
+        {l.stroke?.on ? (
+          <div className="subpanel">
+            <ColorField
+              label="Outline colour"
+              value={l.stroke.color}
+              onChange={hex => set({ stroke: { ...l.stroke, color: hex } } as Partial<Layer>)}
+            />
+            <Field label="Outline weight" hint={`${l.stroke.w}% of type size`}>
+              <input
+                type="range"
+                min={1}
+                max={24}
+                step={1}
+                value={l.stroke.w}
+                onChange={e => set({ stroke: { ...l.stroke, w: Number(e.target.value) } } as Partial<Layer>)}
+              />
+            </Field>
+          </div>
+        ) : null}
+
+        {l.shadow?.on ? (
+          <div className="subpanel">
+            <ColorField
+              label="Shadow colour"
+              value={l.shadow.color}
+              onChange={hex => set({ shadow: { ...l.shadow, color: hex } } as Partial<Layer>)}
+            />
+            <Field label="Softness" hint={`${l.shadow.blur}%`}>
+              <input
+                type="range"
+                min={0}
+                max={80}
+                step={2}
+                value={l.shadow.blur}
+                onChange={e => set({ shadow: { ...l.shadow, blur: Number(e.target.value) } } as Partial<Layer>)}
+              />
+            </Field>
+            <Field label="Offset across" hint={`${l.shadow.x}%`}>
+              <input
+                type="range"
+                min={-40}
+                max={40}
+                step={2}
+                value={l.shadow.x}
+                onChange={e => set({ shadow: { ...l.shadow, x: Number(e.target.value) } } as Partial<Layer>)}
+              />
+            </Field>
+            <Field label="Offset down" hint={`${l.shadow.y}%`}>
+              <input
+                type="range"
+                min={-40}
+                max={40}
+                step={2}
+                value={l.shadow.y}
+                onChange={e => set({ shadow: { ...l.shadow, y: Number(e.target.value) } } as Partial<Layer>)}
+              />
+            </Field>
+          </div>
+        ) : null}
+      </Collapsible>
+
       <Collapsible title="Scrim" hint={l.scrim.on ? "on" : "off"}>
         <div className="row" style={{ marginBottom: 10 }}>
           <MiniBtn on={l.scrim.on} onClick={() => set({ scrim: { ...l.scrim, on: !l.scrim.on } } as Partial<Layer>)}>
