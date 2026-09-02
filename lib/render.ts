@@ -250,7 +250,7 @@ function drawLayerBody(
           g.save();
           shapePath(g, l.shape, ox, oy, dw, dh, l.radius);
           g.clip();
-          const cr = coverRect(picture.naturalWidth, picture.naturalHeight, dw, dh, "cover");
+          const cr = coverRect(picture.naturalWidth, picture.naturalHeight, dw, dh, l.srcFit === "contain" ? "contain" : "cover");
           g.drawImage(resampled(picture, cr.w, cr.h), ox + cr.x, oy + cr.y, cr.w, cr.h);
           g.restore();
           return;

@@ -33,12 +33,11 @@ import {
   logoLayer,
   shapeLayer,
   textLayer,
-  LAYOUTS,
-  layoutStack,
+  chevronLayer,
+  cutoutLayer,
+  stripLayer,
   type Layer,
-  type LayerKind,
   type LayerPatch,
-  type LayoutId,
   type NewLayerDefaults,
 } from "@/lib/layers";
 import { clearAnalysisCache, detailMap, logoIsLight, samplePad, trimTransparent } from "@/lib/analysis";
@@ -89,8 +88,7 @@ export interface StudioState {
   past: HistEntry[];
   future: Design[];
   toast: string | null;
-  /** which starting layout is in play, for the picker's pressed state */
-  layout: LayoutId;
+  cuttingOut: boolean;
 }
 
 export interface Studio extends StudioState {
@@ -112,7 +110,7 @@ export interface Studio extends StudioState {
   resetFitHere: () => void;
   applyFitEverywhere: () => void;
   /* ---- layers ---- */
-  addLayer: (kind: LayerKind | "band") => void;
+  addLayer: (kind: AddKind) => void;
   updateLayer: (id: string, p: Partial<Layer>, tag?: string) => void;
   removeLayer: (id: string) => void;
   duplicateLayer: (id: string) => void;
@@ -143,9 +141,12 @@ export interface Studio extends StudioState {
   moveLayer: (placementId: string, layerId: string, x: number, y: number) => void;
   /** apply one delta to every selected layer except the one already moved */
   moveSelected: (placementId: string, dx: number, dy: number, exceptId?: string) => void;
-  /** swap in a starting layout, then place it against the artwork */
-  applyLayout: (id: LayoutId) => void;
-  layout: LayoutId;
+  /**
+   * Cut the subject out of the creative and add it as a front layer, so a
+   * shape can sit behind them.
+   */
+  cutOutSubject: () => Promise<void>;
+  cuttingOut: boolean;
   /** place the copy and logo clear of the busiest artwork, here */
   autoPlaceHere: () => void;
   /** the same, worked out separately for every placement */
@@ -163,6 +164,9 @@ export interface Studio extends StudioState {
 }
 
 const Ctx = createContext<Studio | null>(null);
+
+/** Everything the add row can insert, including the two brand shape presets. */
+export type AddKind = "text" | "cta" | "logo" | "icon" | "shape" | "band" | "chevron" | "strip";
 
 const kitDefaults = (kit: BrandKit): NewLayerDefaults => ({
   font: kit.headFont,
@@ -199,7 +203,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     past: [],
     future: [],
     toast: null,
-    layout: "clean",
+    cuttingOut: false,
   }));
   const [kitReady, setKitReady] = useState(false);
 
@@ -449,7 +453,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
 
   /* ---------- layers ---------- */
   const addLayer = useCallback(
-    (kind: LayerKind | "band") => {
+    (kind: AddKind) => {
       let madeId = "";
       setS(prev => {
         const d = kitDefaults(prev.kit);
@@ -464,7 +468,11 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
                   ? iconLayer()
                   : kind === "band"
                     ? bandLayer()
-                    : shapeLayer();
+                    : kind === "chevron"
+                      ? chevronLayer()
+                      : kind === "strip"
+                        ? stripLayer()
+                        : shapeLayer();
         madeId = made.id;
 
         // A shape or band is background furniture: dropping it on top would
@@ -900,27 +908,50 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
   };
 
   /**
-   * Replace the layer stack with a starting layout and immediately place it
-   * against the artwork, so picking one is a finished result rather than a pile
-   * of layers at default coordinates.
+   * Ask the model for the subject on a transparent background, then drop it in
+   * front of everything.
+   *
+   * The artwork stays put as the background. Anything you add afterwards —
+   * a brand block, a strip — goes between the two, which is what makes it read
+   * as being behind the person.
    */
-  const applyLayout = useCallback(
-    (id: LayoutId) => {
-      const kd = kitDefaults(s.kit);
-      const pr = PRESETS[s.design.lang] ?? PRESETS.en;
-      const layers = layoutStack(id, kd, s.kit.brand, pr.head, pr.cta);
+  const cutOutSubject = useCallback(async () => {
+    if (!s.src) return say("Load a creative first");
+    setS(prev => ({ ...prev, cuttingOut: true }));
+    try {
+      const res = await fetch("/api/cutout", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ image: s.src }),
+      });
+      const json = (await res.json()) as { image?: string; error?: string };
+      if (!res.ok || !json.image) throw new Error(json.error || "The cut-out failed.");
+
+      // measure it so the layer keeps the subject's proportions
+      const img = new Image();
+      const ratio = await new Promise<number>(resolve => {
+        img.onload = () => resolve(img.naturalHeight / Math.max(1, img.naturalWidth));
+        img.onerror = () => resolve(1.4);
+        img.src = json.image!;
+      });
+      const pl = PLACEMENTS.find(x => x.id === s.active) ?? PLACEMENTS[0];
+      const made = cutoutLayer(json.image, ratio * (pl.w / pl.h));
+
       setS(prev => ({
         ...prev,
-        layout: id,
-        selectedIds: [],
-        design: { ...prev.design, layers, overrides: {}, autoPlaced: {} },
-        past: [...prev.past, { design: prev.design, tag: `layout:${id}`, at: Date.now() }].slice(-HISTORY_LIMIT),
+        cuttingOut: false,
+        selectedIds: [made.id],
+        // in front of everything, which is the whole point
+        design: { ...prev.design, layers: [...prev.design.layers, made] },
+        past: [...prev.past, { design: prev.design, tag: "cutout", at: Date.now() }].slice(-HISTORY_LIMIT),
         future: [],
       }));
-      say(`${LAYOUTS.find(l => l.id === id)?.name ?? "Layout"} applied`);
-    },
-    [s.kit, s.design.lang, say]
-  );
+      say("Subject cut out — add a shape and send it behind to sit it behind them");
+    } catch (e) {
+      setS(prev => ({ ...prev, cuttingOut: false }));
+      say(e instanceof Error ? e.message : "The cut-out failed.");
+    }
+  }, [s.src, s.active, say]);
 
   /**
    * Place the copy and the logo by looking at the artwork, not just at the
@@ -1084,8 +1115,8 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     canUngroup: s.design.layers.some(l => s.selectedIds.includes(l.id) && Boolean(l.group)),
     moveLayer,
     moveSelected,
-    applyLayout,
-    layout: s.layout,
+    cutOutSubject,
+    cuttingOut: s.cuttingOut,
     autoPlaceHere,
     autoPlaceEverywhere,
     applyToAll,

@@ -500,7 +500,12 @@ export function Device(props: DeviceProps) {
                 <img
                   src={l.src}
                   alt={l.name}
-                  style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                  style={{
+                    width: "100%",
+                    height: "100%",
+                    objectFit: l.srcFit ?? "cover",
+                    display: "block",
+                  }}
                 />
               </span>
             ) : null}

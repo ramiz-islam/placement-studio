@@ -5,6 +5,7 @@
 
 import { isRTL, type CreativeMeta, type Design, type Fit, type Placement } from "./core";
 import { collision, detailMap, focal, lumaOfRect, type Collision } from "./analysis";
+import type { Layer } from "./layers";
 import {
   RATIO_LABEL,
   clamp,
@@ -47,6 +48,13 @@ export interface AuditInput {
   padColor: string;
   ver: number;
 }
+
+/**
+ * The layer kinds the score judges: the logo, any text (headline, brand line,
+ * anything else you add) and the button. Shapes, bands and icons are treated as
+ * design, not as content that has to clear the furniture.
+ */
+const SCORED_KINDS = new Set<Layer["kind"]>(["logo", "text", "cta"]);
 
 export function audit(input: AuditInput): AuditResult {
   const { pl, img, meta, design: d, logo, fit, padColor, ver } = input;
@@ -184,8 +192,14 @@ export function audit(input: AuditInput): AuditResult {
 
     for (const p of placed) {
       const l = p.layer;
-      // a full-width band is meant to sit in the furniture; it is not a mistake
-      if (l.kind === "shape" && l.shape === "band") continue;
+      // Only the four things a viewer has to be able to read are scored.
+      //
+      // Shapes and icons are decoration: bleeding a brand block off the edge or
+      // running a strip under the caption is a deliberate move, and marking it
+      // as a safe-zone failure trained people to ignore the score. What matters
+      // is whether the logo, the headline, the brand line and the button
+      // survive the platform's furniture.
+      if (!SCORED_KINDS.has(l.kind)) continue;
       if (l.kind === "logo" && !logo) continue;
 
       // measure what is painted, not the block it is laid out in
@@ -250,16 +264,9 @@ export function audit(input: AuditInput): AuditResult {
         }
       }
 
-      if (l.kind === "icon" && !l.src) {
-        const bgL = lumaOfRect(map, p.box.x, p.box.y, p.box.w, p.box.h);
-        const cr = contrastRatio(hexLuma(l.color), bgL);
-        if (cr < 3) {
-          add("warn", l.name, "low contrast", `About <b>${cr.toFixed(1)}:1</b> against what is behind it.`, 4);
-        }
-      }
     }
 
-    if (clean && clean === placed.filter(p => !(p.layer.kind === "shape" && p.layer.shape === "band")).length) {
+    if (clean && clean === placed.filter(p => SCORED_KINDS.has(p.layer.kind)).length) {
       add("ok", "Layer placement", `${clean} clear`, "Every layer sits inside this placement's safe box.");
     }
 

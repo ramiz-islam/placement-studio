@@ -150,6 +150,22 @@ export function LayersPanel() {
           <button className="mini-btn" onClick={() => st.addLayer("band")} type="button">
             + Band
           </button>
+          <button
+            className="mini-btn"
+            title="A Night Sky chevron — the brand block that carves a clean field out of a photograph"
+            onClick={() => st.addLayer("chevron")}
+            type="button"
+          >
+            + Brand block
+          </button>
+          <button
+            className="mini-btn"
+            title="A strip across the base of the frame"
+            onClick={() => st.addLayer("strip")}
+            type="button"
+          >
+            + Lower third
+          </button>
           <button className="mini-btn" onClick={() => st.addLayer("icon")} type="button">
             + Icon
           </button>

@@ -169,6 +169,13 @@ export interface ShapeLayer extends Base {
    * picture frame — a logo lockup, a badge, a cut-out — instead of flat colour.
    */
   src: string | null;
+  /**
+   * How `src` fills the box. `cover` crops it to the shape, which is what a
+   * picture frame wants. `contain` keeps the whole image and its transparency,
+   * which is what a cut-out subject wants: the point of a cut-out is the shape
+   * of the thing, so cropping it defeats the purpose.
+   */
+  srcFit?: "cover" | "contain";
 }
 
 export interface IconLayer extends Base {
@@ -331,90 +338,61 @@ export const bandLayer = (over: Partial<ShapeLayer> = {}) =>
  * The default stack, matching what the tool looked like before layers existed:
  * logo, brand eyebrow, headline, CTA. Nothing regresses visually.
  */
-export type LayoutId = "clean" | "brandBlock" | "lowerThird";
-
-export interface LayoutDef {
-  id: LayoutId;
-  name: string;
-  note: string;
+/**
+ * The two brand shapes, as things you drop in rather than layouts you switch
+ * to. Switching layout rebuilt the whole stack and threw away the copy and the
+ * positions with it; adding a shape leaves everything else alone, which is what
+ * you actually want when a photograph turns out to need a backing block.
+ */
+/**
+ * A cut-out subject, drawn in front of everything.
+ *
+ * This is what lets a brand block sit *behind* the person instead of over them.
+ * The artwork stays where it is as the background, the block goes on top of it,
+ * and this layer puts the subject back in front — so the shape reads as if it
+ * were behind them.
+ */
+export function cutoutLayer(src: string, aspect: number, over: Partial<ShapeLayer> = {}): ShapeLayer {
+  const w = 74;
+  return shapeLayer({
+    name: "Cut-out",
+    shape: "rect",
+    src,
+    srcFit: "contain",
+    w,
+    // aspect is height/width, and h is a percentage of frame height, so the
+    // caller passes the frame's own ratio in to keep the subject undistorted
+    h: Math.min(100, w * aspect),
+    pos: { x: 0.13, y: 1 - Math.min(1, (w * aspect) / 100) },
+    fill: { color: "#000000", color2: null, angle: 90, opacity: 0 },
+    radius: 0,
+    ...over,
+  });
 }
 
-export const LAYOUTS: LayoutDef[] = [
-  { id: "clean", name: "Clean", note: "Type straight on the artwork. Needs a quiet picture." },
-  { id: "brandBlock", name: "Brand block", note: "A Night Sky chevron carves a field out of the photo." },
-  { id: "lowerThird", name: "Lower third", note: "A strip across the base. Works on any picture." },
-];
+export function chevronLayer(over: Partial<ShapeLayer> = {}): ShapeLayer {
+  return shapeLayer({
+    name: "Brand block",
+    shape: "chevron",
+    w: 62,
+    h: 100,
+    pos: { x: -0.06, y: 0 },
+    fill: solid("#141652", 100),
+    radius: 0,
+    ...over,
+  });
+}
 
-/**
- * A starting stack.
- *
- * Type dropped straight onto a photograph only works when the photograph is
- * quiet, which most are not — so the other two bring their own background. The
- * brand block is the CarSwitch chevron: one Night Sky shape holding the logo
- * and the headline, with the picture doing the work on the other side.
- */
-export function layoutStack(
-  id: LayoutId,
-  d: NewLayerDefaults,
-  brand: string,
-  head: string,
-  cta: string
-): Layer[] {
-  if (id === "clean") return defaultStack(d, brand, head, cta);
-
-  if (id === "brandBlock") {
-    return [
-      shapeLayer({
-        name: "Brand block",
-        shape: "chevron",
-        w: 62,
-        h: 100,
-        pos: { x: -0.06, y: 0 },
-        fill: solid("#141652", 100),
-        radius: 0,
-      }),
-      logoLayer({ pos: { x: 0.07, y: 0.06 }, w: 34 }),
-      textLayer(d, {
-        name: "Headline",
-        text: head,
-        size: 7.4,
-        blockW: 44,
-        pos: { x: 0.07, y: 0.2 },
-        lineHeight: 1.04,
-      }),
-      textLayer(d, {
-        name: "Brand line",
-        text: brand,
-        size: 3,
-        tracking: 0.12,
-        upper: true,
-        blockW: 44,
-        pos: { x: 0.07, y: 0.47 },
-      }),
-      ctaLayer(d, { text: cta, pos: { x: 0.07, y: 0.56 } }),
-    ];
-  }
-
-  return [
-    shapeLayer({
-      name: "Base strip",
-      shape: "band",
-      h: 30,
-      pos: { x: 0, y: 0.7 },
-      fill: { color: "#141652", color2: "#141652", angle: 90, opacity: 96 },
-      radius: 0,
-    }),
-    logoLayer({ pos: { x: 0.06, y: 0.05 }, w: 28 }),
-    textLayer(d, {
-      name: "Headline",
-      text: head,
-      size: 6,
-      blockW: 78,
-      pos: { x: 0.06, y: 0.74 },
-      lineHeight: 1.06,
-    }),
-    ctaLayer(d, { text: cta, pos: { x: 0.06, y: 0.88 } }),
-  ];
+export function stripLayer(over: Partial<ShapeLayer> = {}): ShapeLayer {
+  return shapeLayer({
+    name: "Lower third",
+    shape: "band",
+    h: 30,
+    pos: { x: 0, y: 0.7 },
+    fill: { color: "#141652", color2: "#141652", angle: 90, opacity: 96 },
+    radius: 0,
+    ...over,
+  });
 }
 
 export function defaultStack(d: NewLayerDefaults, brand: string, head: string, cta: string): Layer[] {
