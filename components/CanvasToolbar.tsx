@@ -110,7 +110,8 @@ export function CanvasToolbar() {
   const ink = inkOf(l);
   const isBand = l.kind === "shape" && (l as ShapeLayer).shape === "band";
   const canAlign = l.kind === "text" || l.kind === "cta";
-  const canRotate = (l.kind === "shape" && !isBand) || l.kind === "icon";
+  // anything but a band, which spans the frame by definition
+  const canRotate = !isBand;
 
   // multiply rather than add, so + and - are exact inverses and one tap reads
   // the same whether the layer is tiny or huge
@@ -172,7 +173,7 @@ export function CanvasToolbar() {
           className="cb"
           title="Turn 45° · drag the green handle for any angle"
           onClick={() => {
-            const cur = (l as ShapeLayer | IconLayer).rotation ?? 0;
+            const cur = l.rotation ?? 0;
             let next = Math.round(cur / 45) * 45 + 45;
             if (next > 180) next -= 360;
             st.resizeLayer(id, { rotation: next });

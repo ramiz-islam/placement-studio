@@ -246,6 +246,31 @@ function Inspector({ layer }: { layer: Layer }) {
         </div>
       )}
 
+      {layer.kind === "shape" && layer.shape === "band" ? null : (
+        <Collapsible title="Rotation" hint={`${rl.rotation ?? 0}°`}>
+          <p className="hint">
+            Or drag the round handle above the layer on the frame — any angle, hold Shift for 15° steps.
+          </p>
+          <Field label="Angle" hint={`${rl.rotation ?? 0}°`}>
+            <input
+              type="range"
+              min={-180}
+              max={180}
+              step={1}
+              value={rl.rotation ?? 0}
+              onChange={e => geo({ rotation: Number(e.target.value) })}
+            />
+          </Field>
+          <div className="row">
+            {[-90, -45, 0, 45, 90].map(deg => (
+              <MiniBtn key={deg} on={(rl.rotation ?? 0) === deg} onClick={() => geo({ rotation: deg })}>
+                {deg}°
+              </MiniBtn>
+            ))}
+          </div>
+        </Collapsible>
+      )}
+
       <Field label="Layer name">
         <input type="text" value={layer.name} onChange={e => set({ name: e.target.value } as Partial<Layer>)} />
       </Field>
@@ -667,26 +692,6 @@ function ShapeInspector({ l, set, geo }: { l: ShapeLayer; set: Set; geo: Geo }) 
           onChange={e => geo({ h: parseFloat(e.target.value) })}
         />
       </Field>
-      <Collapsible title="Rotation" hint={`${l.rotation ?? 0}°`}>
-        <p className="hint">Or drag the green handle above the shape on the frame — any angle, Shift for 15° steps.</p>
-        <Field label="Angle" hint={`${l.rotation ?? 0}°`}>
-          <input
-            type="range"
-            min={-180}
-            max={180}
-            step={1}
-            value={l.rotation ?? 0}
-            onChange={e => geo({ rotation: Number(e.target.value) })}
-          />
-        </Field>
-        <div className="row">
-          {[0, 45, 90, 180].map(deg => (
-            <MiniBtn key={deg} on={(l.rotation ?? 0) === deg} onClick={() => geo({ rotation: deg })}>
-              {deg}°
-            </MiniBtn>
-          ))}
-        </div>
-      </Collapsible>
 
       {l.shape !== "ellipse" ? (
         <Field label="Corner radius" hint={`${l.radius}%`}>

@@ -72,6 +72,14 @@ interface Base {
   /** top-left, as a fraction of the placement canvas */
   pos: Pt;
   /**
+   * Degrees clockwise about the layer's own centre.
+   *
+   * On Base rather than on the two shape types, because "rotate the thing I
+   * selected" is how every paint program has worked for thirty years, and a
+   * headline you cannot tilt is a headline you have to rebuild as an image.
+   */
+  rotation?: number;
+  /**
    * Layers sharing a group id behave as one object: selecting any member
    * selects them all, so they drag, align and nudge together. This is what
    * "merge" means for layers that cannot be flattened into each other — a logo
@@ -142,8 +150,6 @@ export interface ShapeLayer extends Base {
   fill: Fill;
   /** % of the shorter side */
   radius: number;
-  /** degrees clockwise, about the shape's own centre */
-  rotation: number;
   /**
    * An uploaded image, clipped to the shape. With this set the shape becomes a
    * picture frame — a logo lockup, a badge, a cut-out — instead of flat colour.
@@ -159,8 +165,6 @@ export interface IconLayer extends Base {
   /** % of frame width */
   w: number;
   color: string;
-  /** degrees clockwise, about the icon's own centre */
-  rotation: number;
   /** the same plate the text and logo layers get */
   scrim: Plate;
 }
@@ -251,8 +255,11 @@ export function logoLayer(over: Partial<LogoLayer> = {}): LogoLayer {
     name: "Logo",
     on: true,
     pos: { x: 0.06, y: 0.05 },
-    w: 22,
-    plate: { ...noPlate("#FFFFFF", 100), radius: 22 },
+    // 22% of frame width read as an afterthought against the artwork
+    w: 28,
+    // a tight brand block, not a soft halo: pad is a % of the logo's own width,
+    // so 9 puts a clean margin round it and nothing more
+    plate: { ...noPlate("#141652", 100), pad: 9, radius: 4 },
     band: { on: false, fill: solid("#141652", 85), pad: 30 },
     ...over,
   };

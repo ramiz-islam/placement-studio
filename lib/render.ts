@@ -173,7 +173,41 @@ export function upscaleFactor(pl: Placement, img: HTMLImageElement, fit: Fit, sc
   return coverRect(img.naturalWidth, img.naturalHeight, pl.w * scale, pl.h * scale, fit).s;
 }
 
+/**
+ * Rotate the whole layer, then draw it.
+ *
+ * Shapes and icons rotate inside their own case, because `p.box` for those is
+ * the axis-aligned bounding box of the already-rotated form and the drawing
+ * uses the layer's real size. For type, buttons and logos `p.box` is the plain
+ * box — the same thing a CSS transform spins without touching layout — so the
+ * rotation goes round the outside and every coordinate inside stays as it was.
+ */
 function drawLayer(
+  g: CanvasRenderingContext2D,
+  p: Placed,
+  pl: Placement,
+  o: RenderOpts,
+  W: number,
+  H: number,
+  logoCache: Map<string, HTMLImageElement>
+) {
+  const deg = p.layer.rotation ?? 0;
+  const spinsHere = p.layer.kind === "logo" || p.layer.kind === "cta" || p.layer.kind === "text";
+  if (!deg || !spinsHere) {
+    drawLayerBody(g, p, pl, o, W, H, logoCache);
+    return;
+  }
+  const cx = (p.box.x + p.box.w / 2) * W;
+  const cy = (p.box.y + p.box.h / 2) * H;
+  g.save();
+  g.translate(cx, cy);
+  g.rotate((deg * Math.PI) / 180);
+  g.translate(-cx, -cy);
+  drawLayerBody(g, p, pl, o, W, H, logoCache);
+  g.restore();
+}
+
+function drawLayerBody(
   g: CanvasRenderingContext2D,
   p: Placed,
   pl: Placement,

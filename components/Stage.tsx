@@ -136,8 +136,11 @@ function FocusView({
   const custom = hasOverride(st.design, pl.id);
   const localCount = Object.keys(st.design.overrides[pl.id] ?? {}).length;
   // how much hand-tuning on other placements a "use everywhere" would destroy
+  // Only hand-made layouts are worth warning about. Auto-place writes overrides
+  // for all 23 on every load, so counting those made the confirm fire every
+  // single time and one click looked like a dead button.
   const otherCustom = Object.entries(st.design.overrides).filter(
-    ([id, per]) => id !== pl.id && Object.keys(per).length > 0
+    ([id, per]) => id !== pl.id && Object.keys(per).length > 0 && !st.design.autoPlaced[id]
   ).length;
   const [armed, setArmed] = useState(false);
   // never leave the confirmation armed when the user has moved on
@@ -157,27 +160,36 @@ function FocusView({
         onLayerResize={st.resizeLayer}
       />
 
+      {/* Six arrow glyphs meant nothing to anyone. Words, grouped by axis,
+          and the note says what the click will act on before you make it. */}
       <div className="align-bar">
         <b>Align</b>
-        <button className="mini-btn" title="Align left" onClick={() => st.align("left")} type="button">
-          ⇤
-        </button>
-        <button className="mini-btn" title="Centre horizontally" onClick={() => st.align("hcenter")} type="button">
-          ↔
-        </button>
-        <button className="mini-btn" title="Align right" onClick={() => st.align("right")} type="button">
-          ⇥
-        </button>
-        <span className="align-sep" />
-        <button className="mini-btn" title="Align top" onClick={() => st.align("top")} type="button">
-          ⤒
-        </button>
-        <button className="mini-btn" title="Centre vertically" onClick={() => st.align("vcenter")} type="button">
-          ↕
-        </button>
-        <button className="mini-btn" title="Align bottom" onClick={() => st.align("bottom")} type="button">
-          ⤓
-        </button>
+        <span className="align-set">
+          {(
+            [
+              ["left", "Left"],
+              ["hcenter", "Centre"],
+              ["right", "Right"],
+            ] as const
+          ).map(([edge, label]) => (
+            <button key={edge} className="mini-btn" onClick={() => st.align(edge)} type="button">
+              {label}
+            </button>
+          ))}
+        </span>
+        <span className="align-set">
+          {(
+            [
+              ["top", "Top"],
+              ["vcenter", "Middle"],
+              ["bottom", "Bottom"],
+            ] as const
+          ).map(([edge, label]) => (
+            <button key={edge} className="mini-btn" onClick={() => st.align(edge)} type="button">
+              {label}
+            </button>
+          ))}
+        </span>
         <span className="align-note">
           {st.selectedIds.length === 0
             ? "nothing selected — aligns every layer to the frame"
@@ -235,7 +247,7 @@ function FocusView({
           title="Reads the artwork and moves the copy and logo to the quietest area inside the safe box"
           type="button"
         >
-          Place it for me
+          Auto-place
         </button>
 
         {/* This is the one control here that changes other channels, and it
@@ -257,8 +269,8 @@ function FocusView({
           type="button"
         >
           {armed
-            ? `Discard adjustments on ${otherCustom} other ${otherCustom === 1 ? "placement" : "placements"}?`
-            : "Use this layout on all channels"}
+            ? `Discard adjustments on ${otherCustom} other ${otherCustom === 1 ? "channel" : "channels"}?`
+            : "Copy this layout to all channels"}
         </button>
         {armed ? (
           <button className="btn" onClick={() => setArmed(false)} type="button">
@@ -272,7 +284,7 @@ function FocusView({
           title="Works each placement out separately — the same artwork crops differently on each one"
           type="button"
         >
-          Place it for me on every channel
+          Auto-place every channel
         </button>
         {custom ? (
           <button className="btn" onClick={st.resetThis} type="button">

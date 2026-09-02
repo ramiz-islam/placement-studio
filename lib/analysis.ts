@@ -204,6 +204,38 @@ export function lumaOfRect(m: DetailMap, fx: number, fy: number, fw: number, fh:
   return n ? sum / n : 128;
 }
 
+/**
+ * Is the logo mostly light? Alpha-weighted, because a logo is usually a mark on
+ * transparency and the transparent pixels carry no colour worth averaging.
+ *
+ * Used to choose which brand colour goes behind it: a white mark needs the navy,
+ * a navy mark needs the white.
+ */
+export function logoIsLight(img: HTMLImageElement | null): boolean {
+  if (!img || !img.naturalWidth) return true;
+  try {
+    const n = 24;
+    const c = document.createElement("canvas");
+    c.width = n;
+    c.height = n;
+    const g = c.getContext("2d", { willReadFrequently: true })!;
+    g.drawImage(img, 0, 0, n, n);
+    const d = g.getImageData(0, 0, n, n).data;
+    let sum = 0;
+    let weight = 0;
+    for (let i = 0; i < d.length; i += 4) {
+      const a = d[i + 3] / 255;
+      if (a < 0.15) continue;
+      sum += (0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2]) * a;
+      weight += a;
+    }
+    // nothing opaque enough to judge: assume a light mark, the common case
+    return weight < 1 ? true : sum / weight > 128;
+  } catch {
+    return true;
+  }
+}
+
 /** Darkened average of the edge pixels — a believable letterbox colour. */
 export function samplePad(img: HTMLImageElement): string {
   const c = document.createElement("canvas");

@@ -48,14 +48,15 @@ function resizeSpec(l: Layer): ResizeSpec {
   switch (l.kind) {
     case "text":
       // right edge rewraps the block; bottom edge scales the type
-      return { width: "blockW", height: "size" };
+      return { width: "blockW", height: "size", rotate: true };
     case "cta":
-      return { width: "size", height: "size" };
+      return { width: "size", height: "size", rotate: true };
     case "icon":
       return { width: "w", proportional: true, rotate: true };
     case "logo":
-      return { width: "w", proportional: true };
+      return { width: "w", proportional: true, rotate: true };
     case "shape":
+      // a band spans the frame, so an angle would only break that
       return l.shape === "band" ? { height: "h", rotate: false } : { width: "w", height: "h", rotate: true };
   }
 }
@@ -508,7 +509,11 @@ export function Device(props: DeviceProps) {
             data-layer={l.id}
             className={cls}
             onPointerDown={onPointerDown}
-            style={{ ...base, width: pc(p.box.w) }}
+            style={{
+              ...base,
+              width: pc(p.box.w),
+              transform: l.rotation ? `rotate(${l.rotation}deg)` : undefined,
+            }}
           >
             {l.band.on ? (
               <span
@@ -559,6 +564,7 @@ export function Device(props: DeviceProps) {
               fontSize: cq(m.sizePx),
               padding: `${cq(m.sizePx * 0.75)} ${cq(m.sizePx * 1.1)}`,
               borderRadius: `${l.radius}%`,
+              transform: l.rotation ? `rotate(${l.rotation}deg)` : undefined,
             }}
           >
             {l.text}
@@ -589,6 +595,7 @@ export function Device(props: DeviceProps) {
               letterSpacing: l.tracking ? `${l.tracking}em` : undefined,
               textAlign: m.align,
               textShadow: "0 .3cqw 1.4cqw rgba(0,0,0,.28)",
+              transform: l.rotation ? `rotate(${l.rotation}deg)` : undefined,
               // background-clip paints the glyphs with the gradient; the text
               // has to go transparent for it to show through
               ...(l.grad?.on

@@ -23,6 +23,12 @@ export interface Check {
   tag: string;
   /** may contain <b> only */
   detail: string;
+  /**
+   * Points this check took off. Shown next to the check, because a score
+   * nobody can take apart is a score nobody trusts — and this one is meant to
+   * gate whether a creative gets shared.
+   */
+  penalty: number;
 }
 export interface AuditResult {
   score: number;
@@ -46,7 +52,7 @@ export function audit(input: AuditInput): AuditResult {
   const checks: Check[] = [];
   let score = 100;
   const add = (level: Level, title: string, tag: string, detail: string, penalty = 0) => {
-    checks.push({ level, title, tag, detail });
+    checks.push({ level, title, tag, detail, penalty });
     score -= penalty;
   };
 
@@ -299,9 +305,17 @@ export function audit(input: AuditInput): AuditResult {
   return { score: clamp(Math.round(score), 0, 100), checks, col };
 }
 
+/**
+ * The bar is 70. Marketing gates sharing on it, so the wording says plainly
+ * whether a creative is over or under rather than grading on a curve.
+ */
+export const PASS_MARK = 70;
+
 export const grade = (score: number) =>
   score >= 85
-    ? { label: "Ready to ship", color: "var(--lime)" }
-    : score >= 65
-      ? { label: "Needs a pass", color: "var(--amber)" }
-      : { label: "Rework the layout", color: "var(--coral-soft)" };
+    ? { label: "Ready to ship", color: "var(--lime-ink)" }
+    : score >= PASS_MARK
+      ? { label: `Clears the ${PASS_MARK} bar`, color: "var(--lime-ink)" }
+      : score >= 50
+        ? { label: `Under ${PASS_MARK} — do not share yet`, color: "var(--amber-ink)" }
+        : { label: `Under ${PASS_MARK} — rework the layout`, color: "var(--coral-ink)" };

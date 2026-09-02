@@ -38,7 +38,7 @@ import {
   type LayerPatch,
   type NewLayerDefaults,
 } from "@/lib/layers";
-import { clearAnalysisCache, detailMap, samplePad } from "@/lib/analysis";
+import { clearAnalysisCache, detailMap, logoIsLight, samplePad } from "@/lib/analysis";
 import { autoLayout } from "@/lib/autolayout";
 import {
   alignedPositions,
@@ -320,6 +320,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
             ver,
             design: {
               ...prev.design,
+              autoPlaced: Object.fromEntries(PLACEMENTS.map(p => [p.id, true as const])),
               layers: plateLayers(prev.design.layers, [...needPlate], true),
               overrides,
             },
@@ -582,6 +583,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
         const per = prev.design.overrides[plId] ?? {};
         const next: Design = {
           ...prev.design,
+          autoPlaced: handTouched(prev.design, plId),
           overrides: { ...prev.design.overrides, [plId]: { ...per, [id]: { ...(per[id] ?? {}), ...p } } },
         };
         const now = Date.now();
@@ -621,6 +623,18 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     });
     say("Back to the shared layout for this layer");
   }, [say]);
+
+  /**
+   * A hand edit on a placement means its layout is no longer auto-placed. Kept
+   * as one helper so every write path agrees — the confirm on "copy to all
+   * channels" reads this to decide whether there is real work to warn about.
+   */
+  const handTouched = (d: Design, placementId: string): Record<string, true> => {
+    if (!d.autoPlaced[placementId]) return d.autoPlaced;
+    const next = { ...d.autoPlaced };
+    delete next[placementId];
+    return next;
+  };
 
   const select = useCallback((id: string | null, additive = false) => {
     setS(prev => {
@@ -663,6 +677,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
           ...prev,
           design: {
             ...prev.design,
+            autoPlaced: handTouched(prev.design, pl.id),
             overrides: {
               ...prev.design.overrides,
               [pl.id]: { ...(prev.design.overrides[pl.id] ?? {}), ...next },
@@ -697,7 +712,11 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
       const coalesce = Boolean(last && last.tag === "nudge" && Date.now() - last.at < COALESCE_MS);
       return {
         ...prev,
-        design: { ...prev.design, overrides: { ...prev.design.overrides, [pl.id]: per } },
+        design: {
+          ...prev.design,
+          autoPlaced: handTouched(prev.design, pl.id),
+          overrides: { ...prev.design.overrides, [pl.id]: per },
+        },
         past: coalesce
           ? prev.past.slice(0, -1).concat({ ...last!, at: Date.now() })
           : [...prev.past, { design: prev.design, tag: "nudge", at: Date.now() }].slice(-HISTORY_LIMIT),
@@ -795,6 +814,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
         const per = d.overrides[placementId] ?? {};
         return {
           ...d,
+          autoPlaced: handTouched(d, placementId),
           overrides: {
             ...d.overrides,
             [placementId]: { ...per, [layerId]: { ...(per[layerId] ?? {}), pos: { x, y } } },
@@ -825,7 +845,14 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
         const cur = posFor(prev.design, placementId, layer);
         per[id] = { ...(per[id] ?? {}), pos: clampPos(p.box, cur.x + dx, cur.y + dy) };
       }
-      return { ...prev, design: { ...prev.design, overrides: { ...prev.design.overrides, [placementId]: per } } };
+      return {
+        ...prev,
+        design: {
+          ...prev.design,
+          autoPlaced: handTouched(prev.design, placementId),
+          overrides: { ...prev.design.overrides, [placementId]: per },
+        },
+      };
     });
   }, []);
 
@@ -842,7 +869,12 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
   const plateLayers = (layers: Layer[], ids: string[], clearRest = false): Layer[] => {
     if (!ids.length && !clearRest) return layers;
     const set = new Set(ids);
-    const fill = { color: "#000000", color2: null, angle: 90, opacity: 42 };
+    // A washed-out grey halo three times the size of the logo is worse than no
+    // plate at all. A brand block sized to the mark is what a designer draws —
+    // and which brand colour depends on the logo, so measure it.
+    const logoInk = logoIsLight(s.logo) ? "#141652" : "#FFFFFF";
+    const brandPlate = { color: logoInk, color2: null, angle: 90, opacity: 100 };
+    const textScrim = { color: "#141652", color2: null, angle: 90, opacity: 72 };
     return layers.map(l => {
       const want = set.has(l.id);
       if (!want) {
@@ -852,8 +884,8 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
         if (l.kind === "logo") return l.plate.on ? ({ ...l, plate: { ...l.plate, on: false } } as Layer) : l;
         return l.scrim.on ? ({ ...l, scrim: { ...l.scrim, on: false } } as Layer) : l;
       }
-      if (l.kind === "logo") return { ...l, plate: { on: true, fill, pad: 34, radius: 18 } } as Layer;
-      if (l.kind === "text") return { ...l, scrim: { on: true, fill, pad: 26, radius: 12 } } as Layer;
+      if (l.kind === "logo") return { ...l, plate: { on: true, fill: brandPlate, pad: 9, radius: 4 } } as Layer;
+      if (l.kind === "text") return { ...l, scrim: { on: true, fill: textScrim, pad: 14, radius: 4 } } as Layer;
       return l;
     });
   };
@@ -876,6 +908,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
       ...prev,
       design: {
         ...prev.design,
+        autoPlaced: { ...prev.design.autoPlaced, [pl.id]: true },
         layers: plateLayers(prev.design.layers, plates),
         overrides: {
           ...prev.design.overrides,
@@ -906,7 +939,12 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     }
     setS(prev => ({
       ...prev,
-      design: { ...prev.design, layers: plateLayers(prev.design.layers, [...needPlate]), overrides },
+      design: {
+        ...prev.design,
+        autoPlaced: Object.fromEntries(PLACEMENTS.map(p => [p.id, true as const])),
+        layers: plateLayers(prev.design.layers, [...needPlate]),
+        overrides,
+      },
       past: [...prev.past, { design: prev.design, tag: "autoPlaceAll", at: Date.now() }].slice(-HISTORY_LIMIT),
       future: [],
     }));
@@ -925,6 +963,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
         ...prev,
         design: {
           ...prev.design,
+          autoPlaced: {},
           layers: prev.design.layers.map(l => (per[l.id] ? ({ ...l, ...per[l.id] } as Layer) : l)),
           overrides: {},
         },

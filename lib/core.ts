@@ -78,6 +78,15 @@ export interface BrandKit {
  * so "add another subheading" and "add a shape" are the same operation.
  */
 export interface Design {
+  /**
+   * Placements whose overrides were written by auto-place rather than by hand.
+   *
+   * Without this, auto-place — which runs on every load, for all 23 — made every
+   * placement look hand-tuned, so "copy this layout to all channels" always
+   * asked "discard adjustments on 22 other placements?" and a single click
+   * appeared to do nothing at all.
+   */
+  autoPlaced: Record<string, true>;
   /** the default fit; a placement can override it */
   fit: Fit;
   /** fitOverrides[placementId] — crop or letterbox is a per-channel decision */
@@ -107,6 +116,7 @@ export interface CreativeMeta {
 
 /** Everything about a design except the layers, which need the brand kit. */
 export const DESIGN_BASE: Omit<Design, "layers"> = {
+  autoPlaced: {},
   fit: "cover",
   fitOverrides: {},
   lang: "en",
