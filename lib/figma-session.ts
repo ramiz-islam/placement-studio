@@ -189,7 +189,20 @@ export async function figmaGet<T>(s: FigmaSession, path: string): Promise<{ data
   const where = path.replace(/\?.*$/, "");
   const said = reason ? ` Figma said: "${reason}"` : "";
   if (res.status === 401) throw new Error(`Figma no longer accepts this connection — connect again.${said}`);
-  if (res.status === 403) throw new Error(`Figma refused ${where} (403).${said}`);
+  if (res.status === 403) {
+    // "Request denied" is Figma's answer when this user cannot reach this file
+    // — as opposed to "Invalid scope(s)" for a token that lacks permission.
+    // Link-sharing does not count for the API; being invited by email does.
+    if (/request denied/i.test(reason)) {
+      throw new Error(
+        "Figma says your account cannot access that file. A view-by-link share is not enough for the API — ask the owner to share it to your email, or to move it out of Drafts into a team project."
+      );
+    }
+    if (/scope/i.test(reason)) {
+      throw new Error(`Your Figma connection is missing a permission. Disconnect and connect again.${said}`);
+    }
+    throw new Error(`Figma refused ${where} (403).${said}`);
+  }
   if (res.status === 404) throw new Error(`Figma could not find that file or frame (404 on ${where}).${said}`);
   if (res.status === 429) throw new Error("Figma is rate-limiting requests. Try again in a minute.");
   throw new Error(`Figma returned ${res.status} on ${where}.${said}`);
