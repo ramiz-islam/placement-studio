@@ -780,3 +780,8 @@ textarea[dir=rtl]{text-align:right}
 .logo-opt:hover{border-color:var(--ink-600);box-shadow:var(--sh-2)}
 .logo-opt[aria-pressed="true"]{border-color:var(--blue);background:var(--blue-ghost)}
 .logo-opt[aria-pressed="true"] em{color:var(--blue-deep)}
+
+/* --- Figma ------------------------------------------------------------------ */
+.figma-connect{display:inline-flex;align-items:center;gap:8px;text-decoration:none;width:100%;justify-content:center}
+.figma-import{display:flex;gap:6px}
+.figma-import input{flex:1;min-width:0}

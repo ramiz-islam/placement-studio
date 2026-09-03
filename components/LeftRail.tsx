@@ -4,9 +4,13 @@ import { useRef } from "react";
 import { PRESETS, type Lang } from "@/lib/core";
 import { RATIO_LABEL } from "@/lib/geometry";
 import { useStudio } from "./StudioProvider";
+import { FigmaPanel } from "./FigmaPanel";
 import { Field, MiniBtn } from "./ui";
 import { LayersPanel } from "./LayersPanel";
 import { sample } from "./Stage";
+
+/** Photoshop files arrive with an empty type more often than not; trust the extension. */
+export const isPsd = (f: File) => /\.psd$/i.test(f.name) || f.type === "image/vnd.adobe.photoshop";
 
 export function LeftRail({ onGenerate }: { onGenerate: () => void }) {
   const st = useStudio();
@@ -15,7 +19,12 @@ export function LeftRail({ onGenerate }: { onGenerate: () => void }) {
   const d = st.design;
 
   const readCreative = (f: File | undefined) => {
-    if (!f || !f.type.startsWith("image/")) return st.say("Images only for now");
+    if (!f) return;
+    // A PSD goes to the importer. Checked by name as well as type: Windows and
+    // some browsers report a Photoshop file's MIME type as empty, which is how
+    // a layered file dropped here got "Images only for now".
+    if (isPsd(f)) return void st.importPsd(f);
+    if (!f.type.startsWith("image/")) return st.say("Images only for now");
     const fr = new FileReader();
     fr.onload = e => st.loadCreative(String(e.target?.result), f.name, f.size);
     fr.readAsDataURL(f);
@@ -107,6 +116,8 @@ export function LeftRail({ onGenerate }: { onGenerate: () => void }) {
           <MiniBtn onClick={() => sample("square", st.loadCreative)}>1:1</MiniBtn>
         </div>
       </div>
+
+      <FigmaPanel />
 
       {/* ---------- frame-level settings ---------- */}
       <div className="panel">

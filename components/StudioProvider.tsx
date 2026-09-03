@@ -113,6 +113,8 @@ export interface Studio extends StudioState {
   loadCreative: (src: string, name: string, bytes: number, opts?: { autoPlace?: boolean }) => void;
   /** read a Photoshop file: its artwork becomes the creative, its layers become layers */
   importPsd: (file: File) => Promise<void>;
+  /** the same, from a Figma frame link, as the connected Figma user */
+  importFigma: (url: string) => Promise<void>;
   importing: boolean;
   loadLogo: (src: string, persist?: boolean) => void;
   clearLogo: () => void;
@@ -496,40 +498,75 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
    * existing stack is replaced rather than merged, since a PSD is a complete
    * design and not an addition to one.
    */
+  /**
+   * What every import does once it has a result, whatever it came from: the
+   * file's own artwork becomes the creative, its layers replace ours in the
+   * designer's positions — so auto-place is skipped — and the studio lands on
+   * the placement matching the file's ratio rather than whichever was open.
+   */
+  const applyImport = useCallback(
+    (r: { width: number; height: number; creative: string | null; layers: Layer[]; notes: string[] }, name: string, tag: string) => {
+      if (!r.creative && !r.layers.length) throw new Error("Nothing in that file could be imported.");
+      setS(prev => ({
+        ...prev,
+        importing: false,
+        selectedIds: [],
+        design: { ...prev.design, layers: r.layers, overrides: {}, autoPlaced: {} },
+        past: [...prev.past, { design: prev.design, tag, at: Date.now() }].slice(-HISTORY_LIMIT),
+        future: [],
+      }));
+      // the creative is the flattened background, not the source file; size it
+      // honestly or the file-size check fails an export that will be a fraction of it
+      const bytes = r.creative ? Math.round((r.creative.length - r.creative.indexOf(",") - 1) * 0.75) : 0;
+      if (r.creative) loadCreative(r.creative, name, bytes, { autoPlace: false });
+      const ratio = r.width / r.height;
+      const best = PLACEMENTS.reduce((a, b) => (Math.abs(b.w / b.h - ratio) < Math.abs(a.w / a.h - ratio) ? b : a));
+      setS(prev => ({ ...prev, active: best.id, plat: best.plat }));
+      console.info(`[${tag}]`, r.notes.join(" "));
+      say(r.notes[r.notes.length - 1] ?? "Imported");
+    },
+    [loadCreative, say]
+  );
+
   const importPsd = useCallback(
     async (file: File) => {
       setS(prev => ({ ...prev, importing: true }));
       try {
         const { importPsd: parse } = await import("@/lib/psd");
-        const kd = kitDefaults(s.kit);
-        const r = await parse(file, kd);
-        if (!r.creative && !r.layers.length) throw new Error("Nothing in that file could be imported.");
-        setS(prev => ({
-          ...prev,
-          importing: false,
-          selectedIds: [],
-          design: { ...prev.design, layers: r.layers, overrides: {}, autoPlaced: {} },
-          past: [...prev.past, { design: prev.design, tag: "importPsd", at: Date.now() }].slice(-HISTORY_LIMIT),
-          future: [],
-        }));
-        // the creative is the flattened background, not the 12 MB PSD; size it honestly
-        // or the file-size check fails an export that will be a fraction of that
-        const bytes = r.creative ? Math.round((r.creative.length - r.creative.indexOf(",") - 1) * 0.75) : 0;
-        if (r.creative) loadCreative(r.creative, file.name, bytes, { autoPlace: false });
-        // land on the placement the file was designed for, not whichever was open
-        const ratio = r.width / r.height;
-        const best = PLACEMENTS.reduce((a, b) =>
-          Math.abs(b.w / b.h - ratio) < Math.abs(a.w / a.h - ratio) ? b : a
-        );
-        setS(prev => ({ ...prev, active: best.id, plat: best.plat }));
-        console.info("[psd import]", r.notes.join(" "));
-        say(r.notes[r.notes.length - 1] ?? "Photoshop file imported");
+        applyImport(await parse(file, kitDefaults(s.kit)), file.name, "importPsd");
       } catch (e) {
         setS(prev => ({ ...prev, importing: false }));
         say(e instanceof Error ? e.message : "That file could not be read as a PSD.");
       }
     },
-    [s.kit, loadCreative, say]
+    [s.kit, applyImport, say]
+  );
+
+  const importFigma = useCallback(
+    async (url: string) => {
+      setS(prev => ({ ...prev, importing: true }));
+      try {
+        const res = await fetch("/api/figma/import", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ url, defaults: kitDefaults(s.kit) }),
+        });
+        const json = (await res.json()) as {
+          error?: string;
+          width: number;
+          height: number;
+          creative: string | null;
+          layers: Layer[];
+          notes: string[];
+        };
+        if (!res.ok) throw new Error(json.error || "The Figma import failed.");
+        applyImport(json, "Figma frame", "importFigma");
+      } catch (e) {
+        setS(prev => ({ ...prev, importing: false }));
+        say(e instanceof Error ? e.message : "The Figma import failed.");
+      }
+    },
+    [s.kit, applyImport, say]
   );
 
   const toggleIgnore = useCallback((key: string) => {
@@ -1313,6 +1350,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     moveSelected,
     loadScreenshot,
     importPsd,
+    importFigma,
     importing: s.importing,
     addKitLogo,
     renameKitLogo,

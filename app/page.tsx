@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { StudioProvider, useStudio } from "@/components/StudioProvider";
 import { Icons, Toggle } from "@/components/ui";
-import { LeftRail } from "@/components/LeftRail";
+import { LeftRail, isPsd } from "@/components/LeftRail";
 import { Stage } from "@/components/Stage";
 import { AuditPanel } from "@/components/AuditPanel";
 import { ExportSheet } from "@/components/ExportSheet";
@@ -104,7 +104,9 @@ function Studio() {
     const drop = (e: DragEvent) => {
       e.preventDefault();
       const f = e.dataTransfer?.files?.[0];
-      if (!f || !f.type.startsWith("image/")) return;
+      if (!f) return;
+      if (isPsd(f)) return void st.importPsd(f);
+      if (!f.type.startsWith("image/")) return;
       const fr = new FileReader();
       fr.onload = ev => st.loadCreative(String(ev.target?.result), f.name, f.size);
       fr.readAsDataURL(f);
