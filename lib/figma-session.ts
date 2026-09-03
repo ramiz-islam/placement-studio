@@ -174,10 +174,23 @@ export async function refreshIfNeeded(s: FigmaSession): Promise<FigmaSession> {
 export async function figmaGet<T>(s: FigmaSession, path: string): Promise<{ data: T; sess: FigmaSession }> {
   const sess = await refreshIfNeeded(s);
   const res = await fetch(`${FIGMA_API}${path}`, { headers: { Authorization: `Bearer ${sess.access}` } });
-  if (res.status === 401) throw new Error("Figma no longer accepts this connection — connect again.");
-  if (res.status === 403) throw new Error("Your Figma account cannot open that file. Ask for it to be shared with you.");
-  if (res.status === 404) throw new Error("Figma could not find that file or frame. Check the link.");
+  if (res.ok) return { data: (await res.json()) as T, sess };
+
+  // Figma explains itself in the body. Surface that verbatim: a 403 can mean
+  // "you cannot see this file", "the token lacks this scope" or "this app is
+  // not allowed to", and collapsing them into one sentence hid which it was.
+  let reason = "";
+  try {
+    const body = (await res.json()) as { err?: string; message?: string; error?: string };
+    reason = body.err || body.message || body.error || "";
+  } catch {
+    /* no JSON body */
+  }
+  const where = path.replace(/\?.*$/, "");
+  const said = reason ? ` Figma said: "${reason}"` : "";
+  if (res.status === 401) throw new Error(`Figma no longer accepts this connection — connect again.${said}`);
+  if (res.status === 403) throw new Error(`Figma refused ${where} (403).${said}`);
+  if (res.status === 404) throw new Error(`Figma could not find that file or frame (404 on ${where}).${said}`);
   if (res.status === 429) throw new Error("Figma is rate-limiting requests. Try again in a minute.");
-  if (!res.ok) throw new Error(`Figma returned ${res.status}.`);
-  return { data: (await res.json()) as T, sess };
+  throw new Error(`Figma returned ${res.status} on ${where}.${said}`);
 }
