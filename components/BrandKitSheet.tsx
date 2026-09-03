@@ -52,7 +52,7 @@ export function BrandKitSheet({
             className="btn primary"
             type="button"
             onClick={() => {
-              st.applyKit({ ...draft, brand: draft.brand.trim() || KIT_DEFAULTS.brand, logo: st.logoSrc });
+              st.applyKit({ ...draft, brand: draft.brand.trim() || KIT_DEFAULTS.brand, logo: st.logoSrc, logos: st.kit.logos });
               onClose();
               st.say("Brand kit saved — applied from now on");
             }}
@@ -71,34 +71,53 @@ export function BrandKitSheet({
         />
       </Field>
 
-      <Field label={<>Logo <span className="p-note">PNG with transparency works best</span></>}>
-        {st.logoSrc ? (
-          <div className="creative">
-            <div className="creative-thumb pad">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={st.logoSrc} alt="" />
-            </div>
-            <div className="creative-meta">
-              <div className="creative-name">Logo loaded</div>
-              <div className="link-row">
-                <button className="link-btn" onClick={() => logoRef.current?.click()} type="button">
-                  Replace
-                </button>
-                <button className="link-btn danger" onClick={st.clearLogo} type="button">
-                  Remove
-                </button>
+      <Field
+        label={
+          <>
+            Logos <span className="p-note">primary first · PNG with transparency works best</span>
+          </>
+        }
+      >
+        {st.kit.logos.length ? (
+          <div className="logo-list">
+            {st.kit.logos.map((k, i) => (
+              <div className="logo-row" key={k.id}>
+                <div className="creative-thumb pad">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={st.logoSrcs[k.id] ?? k.src} alt="" />
+                </div>
+                <div className="creative-meta">
+                  <input
+                    className="logo-name"
+                    type="text"
+                    value={k.name}
+                    aria-label="Logo name"
+                    onChange={e => st.renameKitLogo(k.id, e.target.value)}
+                  />
+                  <div className="link-row">
+                    {i === 0 ? (
+                      <span className="p-note">Primary — used unless a layer picks another</span>
+                    ) : (
+                      <button className="link-btn" onClick={() => st.makePrimaryLogo(k.id)} type="button">
+                        Make primary
+                      </button>
+                    )}
+                    <button className="link-btn danger" onClick={() => st.removeKitLogo(k.id)} type="button">
+                      Remove
+                    </button>
+                  </div>
+                </div>
               </div>
-            </div>
+            ))}
           </div>
-        ) : (
-          <button className="drop tight" type="button" onClick={() => logoRef.current?.click()}>
-            <svg>
-              <use href="#i-up" />
-            </svg>
-            <div className="drop-t">Add a logo</div>
-            <div className="drop-s">Saved with your kit</div>
-          </button>
-        )}
+        ) : null}
+        <button className="drop tight" type="button" onClick={() => logoRef.current?.click()}>
+          <svg>
+            <use href="#i-up" />
+          </svg>
+          <div className="drop-t">{st.kit.logos.length ? "Add another logo" : "Add a logo"}</div>
+          <div className="drop-s">Emblem, mono version, favicon — pick per layer while designing</div>
+        </button>
         <input
           ref={logoRef}
           type="file"
@@ -109,7 +128,11 @@ export function BrandKitSheet({
             e.target.value = "";
             if (!f) return;
             const fr = new FileReader();
-            fr.onload = async ev => st.loadLogo(await shrinkImage(String(ev.target?.result), 512));
+            fr.onload = async ev =>
+              st.addKitLogo(
+                await shrinkImage(String(ev.target?.result), 512),
+                f.name.replace(/\.[a-z0-9]+$/i, "").replace(/[-_]+/g, " ")
+              );
             fr.readAsDataURL(f);
           }}
         />

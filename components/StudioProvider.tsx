@@ -19,6 +19,7 @@ import {
   PRESETS,
   isRTL,
   type BrandKit,
+  type KitLogo,
   type CreativeMeta,
   type Design,
   type Fit,
@@ -72,8 +73,11 @@ export interface StudioState {
   meta: CreativeMeta | null;
   padColor: string;
   ver: number;
+  /** the primary logo — first in the kit — kept for everything that only needs one */
   logo: HTMLImageElement | null;
   logoSrc: string | null;
+  /** every kit logo, decoded and trimmed, by id */
+  logoImgs: Record<string, { img: HTMLImageElement; src: string }>;
   design: Design;
   kit: BrandKit;
   view: "focus" | "grid";
@@ -90,6 +94,7 @@ export interface StudioState {
   future: Design[];
   toast: string | null;
   cuttingOut: boolean;
+  importing: boolean;
   /**
    * Checks the user has looked at and accepted, per placement:
    * ignored[placementId][check.key]. The real score is still computed and
@@ -105,7 +110,10 @@ export interface Studio extends StudioState {
   fit: Fit;
   patch: (p: Partial<StudioState>) => void;
   patchDesign: (p: Partial<Design>, tag?: string) => void;
-  loadCreative: (src: string, name: string, bytes: number) => void;
+  loadCreative: (src: string, name: string, bytes: number, opts?: { autoPlace?: boolean }) => void;
+  /** read a Photoshop file: its artwork becomes the creative, its layers become layers */
+  importPsd: (file: File) => Promise<void>;
+  importing: boolean;
   loadLogo: (src: string, persist?: boolean) => void;
   clearLogo: () => void;
   setLang: (l: Lang) => void;
@@ -150,6 +158,17 @@ export interface Studio extends StudioState {
   moveSelected: (placementId: string, dx: number, dy: number, exceptId?: string) => void;
   /** put a screenshot on a screen layer and remember it for the next one */
   loadScreenshot: (layerId: string, src: string) => void;
+  /* ---- multiple logos ---- */
+  addKitLogo: (src: string, name: string) => void;
+  renameKitLogo: (id: string, name: string) => void;
+  makePrimaryLogo: (id: string) => void;
+  removeKitLogo: (id: string) => void;
+  /** decoded kit logos by id, for the frame */
+  logoImgs: Record<string, { img: HTMLImageElement; src: string }>;
+  /** the same, as sources, for the preview */
+  logoSrcs: Record<string, string>;
+  /** the same, as images, for the audit and export */
+  logos: Record<string, HTMLImageElement>;
   /** acknowledge a check on this placement, or take the acknowledgement back */
   toggleIgnore: (key: string) => void;
   ignoredHere: Record<string, true>;
@@ -202,6 +221,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     ver: 0,
     logo: null,
     logoSrc: null,
+    logoImgs: {},
     design: initialDesign(KIT_DEFAULTS),
     kit: KIT_DEFAULTS,
     view: "focus",
@@ -216,6 +236,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     future: [],
     toast: null,
     cuttingOut: false,
+    importing: false,
     ignored: {},
   }));
   const [kitReady, setKitReady] = useState(false);
@@ -283,22 +304,21 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
       }
     }
     setS(prev => ({ ...prev, kit: k }));
-    if (k.logo) loadLogoInto(setS, k.logo);
-    else setS(prev => ({ ...prev, logo: null, logoSrc: null }));
+    loadKitLogos(setS, k.logos);
   }, []);
 
   useEffect(() => {
     let saved: BrandKit | null = null;
     try {
       const raw = localStorage.getItem(KIT_KEY);
-      if (raw) saved = { ...KIT_DEFAULTS, ...(JSON.parse(raw) as Partial<BrandKit>) };
+      if (raw) saved = migrateKit({ ...KIT_DEFAULTS, ...(JSON.parse(raw) as Partial<BrandKit>) });
     } catch {
       saved = null;
     }
     if (saved) {
       const kit = saved;
       setS(prev => ({ ...prev, kit, design: initialDesign(kit), past: [], future: [] }));
-      if (kit.logo) loadLogoInto(setS, kit.logo);
+      loadKitLogos(setS, kit.logos);
     }
     setKitReady(true);
   }, []);
@@ -315,13 +335,25 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
 
   /* ---------- creative + logo ---------- */
   const loadCreative = useCallback(
-    (src: string, name: string, bytes: number) => {
+    (src: string, name: string, bytes: number, opts?: { autoPlace?: boolean }) => {
+      const autoPlace = opts?.autoPlace ?? true;
       const img = new Image();
       img.onload = () => {
         clearAnalysisCache();
         setS(prev => {
           const pad = samplePad(img);
           const ver = prev.ver + 1;
+          if (!autoPlace) {
+            // an import arrives with positions a designer chose; leave them be
+            return {
+              ...prev,
+              img,
+              src,
+              meta: { name, bytes, w: img.naturalWidth, h: img.naturalHeight },
+              padColor: pad,
+              ver,
+            };
+          }
           // Look at the artwork before laying anything out. Dropping the copy
           // on default coordinates puts a logo across whatever happens to be in
           // the top-left corner, which on a selfie is usually a hand.
@@ -352,7 +384,11 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
             },
           };
         });
-        say(`Read the artwork and placed the copy across ${PLACEMENTS.length} placements`);
+        say(
+          autoPlace
+            ? `Read the artwork and placed the copy across ${PLACEMENTS.length} placements`
+            : `Loaded ${img.naturalWidth} × ${img.naturalHeight}`
+        );
       };
       img.onerror = () => say("That file could not be read as an image");
       img.src = src;
@@ -360,19 +396,78 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     [say]
   );
 
+  const persistKit = (k: BrandKit) => {
+    try {
+      localStorage.setItem(KIT_KEY, JSON.stringify(k));
+    } catch {
+      /* too large to persist; still active this session */
+    }
+  };
+
+  /** Replace the primary logo, or create it. Older callers only ever had one. */
   const loadLogo = useCallback((src: string, persist = true) => {
-    loadLogoInto(setS, src);
-    if (persist) {
+    setS(prev => {
+      const logos = prev.kit.logos.length
+        ? prev.kit.logos.map((l, i) => (i === 0 ? { ...l, src } : l))
+        : [{ id: "primary", name: "Primary", src }];
+      const k = { ...prev.kit, logo: src, logos };
+      if (persist) persistKit(k);
+      loadKitLogos(setS, logos);
+      return { ...prev, kit: k };
+    });
+  }, []);
+
+  /** Add another logo to the kit — an emblem, a mono version, a favicon. */
+  const addKitLogo = useCallback(
+    (src: string, name: string) => {
       setS(prev => {
-        const k = { ...prev.kit, logo: src };
-        try {
-          localStorage.setItem(KIT_KEY, JSON.stringify(k));
-        } catch {
-          /* logo too large to persist; still active this session */
-        }
+        const id = `logo-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}`;
+        const logos = [...prev.kit.logos, { id, name: name.trim() || `Logo ${prev.kit.logos.length + 1}`, src }];
+        const k = { ...prev.kit, logo: logos[0].src, logos };
+        persistKit(k);
+        loadKitLogos(setS, logos);
         return { ...prev, kit: k };
       });
-    }
+      say("Logo added to the kit");
+    },
+    [say]
+  );
+
+  const renameKitLogo = useCallback((id: string, name: string) => {
+    setS(prev => {
+      const logos = prev.kit.logos.map(l => (l.id === id ? { ...l, name } : l));
+      const k = { ...prev.kit, logos };
+      persistKit(k);
+      return { ...prev, kit: k };
+    });
+  }, []);
+
+  /** Move a logo to the front. The primary is what every layer shows unless it picked another. */
+  const makePrimaryLogo = useCallback((id: string) => {
+    setS(prev => {
+      const pick = prev.kit.logos.find(l => l.id === id);
+      if (!pick) return prev;
+      const logos = [pick, ...prev.kit.logos.filter(l => l.id !== id)];
+      const k = { ...prev.kit, logo: pick.src, logos };
+      persistKit(k);
+      loadKitLogos(setS, logos);
+      return { ...prev, kit: k };
+    });
+  }, []);
+
+  const removeKitLogo = useCallback((id: string) => {
+    setS(prev => {
+      const logos = prev.kit.logos.filter(l => l.id !== id);
+      const k = { ...prev.kit, logo: logos[0]?.src ?? null, logos };
+      persistKit(k);
+      loadKitLogos(setS, logos);
+      // layers pointing at it fall back to the primary rather than going blank
+      const design = {
+        ...prev.design,
+        layers: prev.design.layers.map(l => (l.kind === "logo" && l.logoId === id ? { ...l, logoId: null } : l)),
+      };
+      return { ...prev, kit: k, design };
+    });
   }, []);
 
   const loadScreenshot = useCallback(
@@ -395,6 +490,48 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     [commit, say]
   );
 
+  /**
+   * Photoshop in. The file's own artwork becomes the creative and its layers
+   * become ours, in the designer's positions — so auto-place is skipped, and the
+   * existing stack is replaced rather than merged, since a PSD is a complete
+   * design and not an addition to one.
+   */
+  const importPsd = useCallback(
+    async (file: File) => {
+      setS(prev => ({ ...prev, importing: true }));
+      try {
+        const { importPsd: parse } = await import("@/lib/psd");
+        const kd = kitDefaults(s.kit);
+        const r = await parse(file, kd);
+        if (!r.creative && !r.layers.length) throw new Error("Nothing in that file could be imported.");
+        setS(prev => ({
+          ...prev,
+          importing: false,
+          selectedIds: [],
+          design: { ...prev.design, layers: r.layers, overrides: {}, autoPlaced: {} },
+          past: [...prev.past, { design: prev.design, tag: "importPsd", at: Date.now() }].slice(-HISTORY_LIMIT),
+          future: [],
+        }));
+        // the creative is the flattened background, not the 12 MB PSD; size it honestly
+        // or the file-size check fails an export that will be a fraction of that
+        const bytes = r.creative ? Math.round((r.creative.length - r.creative.indexOf(",") - 1) * 0.75) : 0;
+        if (r.creative) loadCreative(r.creative, file.name, bytes, { autoPlace: false });
+        // land on the placement the file was designed for, not whichever was open
+        const ratio = r.width / r.height;
+        const best = PLACEMENTS.reduce((a, b) =>
+          Math.abs(b.w / b.h - ratio) < Math.abs(a.w / a.h - ratio) ? b : a
+        );
+        setS(prev => ({ ...prev, active: best.id, plat: best.plat }));
+        console.info("[psd import]", r.notes.join(" "));
+        say(r.notes[r.notes.length - 1] ?? "Photoshop file imported");
+      } catch (e) {
+        setS(prev => ({ ...prev, importing: false }));
+        say(e instanceof Error ? e.message : "That file could not be read as a PSD.");
+      }
+    },
+    [s.kit, loadCreative, say]
+  );
+
   const toggleIgnore = useCallback((key: string) => {
     setS(prev => {
       const per = { ...(prev.ignored[prev.active] ?? {}) };
@@ -404,15 +541,14 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  /** Remove the primary logo. With others in the kit, the next one steps up. */
   const clearLogo = useCallback(() => {
     setS(prev => {
-      const k = { ...prev.kit, logo: null };
-      try {
-        localStorage.setItem(KIT_KEY, JSON.stringify(k));
-      } catch {
-        /* ignore */
-      }
-      return { ...prev, logo: null, logoSrc: null, kit: k };
+      const logos = prev.kit.logos.slice(1);
+      const k = { ...prev.kit, logo: logos[0]?.src ?? null, logos };
+      persistKit(k);
+      loadKitLogos(setS, logos);
+      return { ...prev, kit: k };
     });
   }, []);
 
@@ -725,6 +861,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
         const ctx: LayoutContext = {
           lang: prev.design.lang,
           logoAspect: prev.logo ? prev.logo.naturalHeight / prev.logo.naturalWidth : 0.3,
+        logoAspects: aspectsOf(prev.logoImgs),
         };
         const ids = prev.selectedIds.length
           ? prev.selectedIds
@@ -760,6 +897,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
       const ctx: LayoutContext = {
         lang: prev.design.lang,
         logoAspect: prev.logo ? prev.logo.naturalHeight / prev.logo.naturalWidth : 0.3,
+        logoAspects: aspectsOf(prev.logoImgs),
       };
       const per = { ...(prev.design.overrides[pl.id] ?? {}) };
       for (const id of prev.selectedIds) {
@@ -897,6 +1035,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
       const ctx: LayoutContext = {
         lang: prev.design.lang,
         logoAspect: prev.logo ? prev.logo.naturalHeight / prev.logo.naturalWidth : 0.3,
+        logoAspects: aspectsOf(prev.logoImgs),
       };
       const per = { ...(prev.design.overrides[placementId] ?? {}) };
       for (const id of ids) {
@@ -920,6 +1059,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
   const ctxOf = (st: StudioState): LayoutContext => ({
     lang: st.design.lang,
     logoAspect: st.logo ? st.logo.naturalHeight / st.logo.naturalWidth : 0.3,
+    logoAspects: aspectsOf(st.logoImgs),
   });
 
   /**
@@ -1116,8 +1256,20 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
 
   const placement = useMemo(() => PLACEMENTS.find(p => p.id === s.active) ?? PLACEMENTS[0], [s.active]);
   const ctx = useMemo<LayoutContext>(
-    () => ({ lang: s.design.lang, logoAspect: s.logo ? s.logo.naturalHeight / s.logo.naturalWidth : 0.3 }),
-    [s.design.lang, s.logo]
+    () => ({
+      lang: s.design.lang,
+      logoAspect: s.logo ? s.logo.naturalHeight / s.logo.naturalWidth : 0.3,
+      logoAspects: aspectsOf(s.logoImgs),
+    }),
+    [s.design.lang, s.logo, s.logoImgs]
+  );
+  const logoSrcs = useMemo(
+    () => Object.fromEntries(Object.entries(s.logoImgs).map(([id, v]) => [id, v.src])),
+    [s.logoImgs]
+  );
+  const logoImgsOnly = useMemo(
+    () => Object.fromEntries(Object.entries(s.logoImgs).map(([id, v]) => [id, v.img])),
+    [s.logoImgs]
   );
   const fit = fitFor(s.design, s.active);
 
@@ -1160,6 +1312,15 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     moveLayer,
     moveSelected,
     loadScreenshot,
+    importPsd,
+    importing: s.importing,
+    addKitLogo,
+    renameKitLogo,
+    makePrimaryLogo,
+    removeKitLogo,
+    logoImgs: s.logoImgs,
+    logoSrcs: logoSrcs,
+    logos: logoImgsOnly,
     toggleIgnore,
     ignoredHere: s.ignored[s.active] ?? {},
     cutOutSubject,
@@ -1180,15 +1341,56 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 
-function loadLogoInto(setS: React.Dispatch<React.SetStateAction<StudioState>>, src: string) {
-  // Trim first: the layer's box is derived from the image's aspect ratio, so
-  // transparent padding would inflate the box and fail safe-zone checks the ink
-  // itself passes.
-  void trimTransparent(src).then(trimmed => {
-    const img = new Image();
-    img.onload = () => setS(prev => ({ ...prev, logo: img, logoSrc: trimmed }));
-    img.onerror = () => setS(prev => ({ ...prev, logo: null, logoSrc: null }));
-    img.src = trimmed;
+/** height/width for every decoded logo, keyed by kit id */
+function aspectsOf(imgs: Record<string, { img: HTMLImageElement }>): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const [id, v] of Object.entries(imgs)) {
+    if (v.img.naturalWidth) out[id] = v.img.naturalHeight / v.img.naturalWidth;
+  }
+  return out;
+}
+
+/** A kit saved before there was a list still carried one logo. Lift it into the list once. */
+function migrateKit(k: BrandKit): BrandKit {
+  if ((!k.logos || !k.logos.length) && k.logo) {
+    return { ...k, logos: [{ id: "primary", name: "Primary", src: k.logo }] };
+  }
+  return { ...k, logos: k.logos ?? [] };
+}
+
+/**
+ * Decode every kit logo, trimmed of transparent padding, and mirror the first
+ * into `logo`/`logoSrc` so the code paths that only ever needed one keep
+ * working. Trimming matters: a layer's box comes from the image's aspect, so
+ * padding would inflate the box and fail safe-zone checks the ink itself passes.
+ */
+function loadKitLogos(setS: React.Dispatch<React.SetStateAction<StudioState>>, logos: KitLogo[]) {
+  if (!logos.length) {
+    setS(prev => ({ ...prev, logo: null, logoSrc: null, logoImgs: {} }));
+    return;
+  }
+  void Promise.all(
+    logos.map(
+      l =>
+        new Promise<[string, { img: HTMLImageElement; src: string } | null]>(resolve => {
+          void trimTransparent(l.src).then(trimmed => {
+            const img = new Image();
+            img.onload = () => resolve([l.id, { img, src: trimmed }]);
+            img.onerror = () => resolve([l.id, null]);
+            img.src = trimmed;
+          });
+        })
+    )
+  ).then(entries => {
+    const logoImgs: Record<string, { img: HTMLImageElement; src: string }> = {};
+    for (const [id, v] of entries) if (v) logoImgs[id] = v;
+    const primary = logoImgs[logos[0].id] ?? null;
+    setS(prev => ({
+      ...prev,
+      logoImgs,
+      logo: primary ? primary.img : null,
+      logoSrc: primary ? primary.src : null,
+    }));
   });
 }
 

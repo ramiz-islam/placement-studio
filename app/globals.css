@@ -762,3 +762,21 @@ textarea[dir=rtl]{text-align:right}
 .score-adj{margin-top:6px;font-size:11.5px;color:var(--text-dim);line-height:1.4}
 .score-adj b{font-size:15px;font-weight:800;font-variant-numeric:tabular-nums}
 .score-adj-note{color:var(--muted)}
+
+/* --- several logos ------------------------------------------------------- */
+.logo-list{display:flex;flex-direction:column;gap:8px;margin-bottom:10px}
+.logo-row{display:flex;gap:10px;align-items:center;padding:8px;border:1px solid var(--line);border-radius:10px;
+  background:var(--ink-750);box-shadow:var(--sh-1)}
+.logo-row .creative-thumb{flex:none}
+.logo-name{width:100%;font-size:12.5px;font-weight:700;padding:3px 6px;border:1px solid transparent;border-radius:6px;
+  background:transparent;color:var(--text)}
+.logo-name:hover,.logo-name:focus{border-color:var(--line);background:var(--ink-850);outline:none}
+.logo-pick{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.logo-opt{display:flex;flex-direction:column;gap:4px;align-items:center;padding:7px 5px 6px;border:1px solid var(--line);
+  border-radius:9px;background:var(--ink-750);box-shadow:var(--sh-1);transition:all .14s}
+.logo-opt img{width:100%;height:30px;object-fit:contain;background:var(--navy);border-radius:5px;padding:3px}
+.logo-opt em{font-style:normal;font-size:10px;font-weight:600;color:var(--muted);text-align:center;line-height:1.2;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
+.logo-opt:hover{border-color:var(--ink-600);box-shadow:var(--sh-2)}
+.logo-opt[aria-pressed="true"]{border-color:var(--blue);background:var(--blue-ghost)}
+.logo-opt[aria-pressed="true"] em{color:var(--blue-deep)}

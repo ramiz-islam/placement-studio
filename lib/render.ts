@@ -31,6 +31,8 @@ export interface RenderOpts {
   padColor: string;
   img: HTMLImageElement;
   logo: HTMLImageElement | null;
+  /** every kit logo by id, for layers that picked one */
+  logos?: Record<string, HTMLImageElement>;
   design: Design;
   ctx: LayoutContext;
   /** uploaded shape and icon images, keyed by src — see preloadLayerImages */
@@ -305,9 +307,10 @@ function drawLayerBody(
 
     case "logo": {
       const l = p.layer;
-      if (!o.logo) return;
+      const im = (l.logoId && o.logos?.[l.logoId]) || o.logo;
+      if (!im) return;
       const lw = w;
-      const lh = lw * (o.logo.naturalHeight / o.logo.naturalWidth);
+      const lh = lw * (im.naturalHeight / im.naturalWidth);
 
       if (l.band.on) {
         const pad = (lw * l.band.pad) / 100;
@@ -323,7 +326,7 @@ function drawLayerBody(
         roundRect(g, x - pad, y - pad, lw + pad * 2, lh + pad * 2, (shorter * l.plate.radius) / 100);
         g.fill();
       }
-      g.drawImage(resampled(o.logo, lw, lh), x, y, lw, lh);
+      g.drawImage(resampled(im, lw, lh), x, y, lw, lh);
       return;
     }
 

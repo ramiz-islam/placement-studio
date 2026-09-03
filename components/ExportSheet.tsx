@@ -101,6 +101,7 @@ export function ExportSheet({ open, onClose }: { open: boolean; onClose: () => v
         padColor: st.padColor,
         img: st.img,
         logo: st.logo,
+        logos: st.logos,
         design: st.design,
         ctx: st.ctx,
         images,

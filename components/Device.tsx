@@ -88,6 +88,8 @@ export interface DeviceProps {
   src: string;
   design: Design;
   logoSrc: string | null;
+  /** every kit logo by id; a layer that picked one shows it, others show logoSrc */
+  logoSrcs?: Record<string, string>;
   ctx: LayoutContext;
   fit: "cover" | "contain";
   padColor: string;
@@ -120,6 +122,7 @@ export function Device(props: DeviceProps) {
     src,
     design: d,
     logoSrc,
+    logoSrcs,
     ctx,
     fit,
     padColor,
@@ -741,7 +744,8 @@ export function Device(props: DeviceProps) {
         );
 
       case "logo": {
-        if (!logoSrc) return null;
+        const shown = (l.logoId && logoSrcs?.[l.logoId]) || logoSrc;
+        if (!shown) return null;
         const platePad = (l.plate.pad / 100) * 100;
         const bandPad = (l.band.pad / 100) * 100;
         return (
@@ -782,7 +786,7 @@ export function Device(props: DeviceProps) {
               />
             ) : null}
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={logoSrc} alt="Brand logo" />
+            <img src={shown} alt="Brand logo" />
             {handles(l)}
           </div>
         );

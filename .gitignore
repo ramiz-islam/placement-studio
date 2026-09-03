@@ -23,3 +23,6 @@ next-env.d.ts
 worker-configuration.d.ts
 .dev.vars
 .next-dev/
+
+# local PSD fixtures used to test the import; never committed
+public/_*.psd

@@ -697,8 +697,30 @@ function CtaInspector({ l, set, geo }: { l: CtaLayer; set: Set; geo: Geo }) {
 function LogoInspector({ l, set, geo }: { l: LogoLayer; set: Set; geo: Geo }) {
   const st = useStudio();
   const fileRef = useRef<HTMLInputElement>(null);
+  const kitLogos = st.kit.logos;
+  const current = (l.logoId && kitLogos.find(k => k.id === l.logoId)) || kitLogos[0] || null;
   return (
     <>
+      {kitLogos.length > 1 ? (
+        <Field label="Which logo" hint={current ? current.name : ""}>
+          <div className="logo-pick">
+            {kitLogos.map((k, i) => (
+              <button
+                key={k.id}
+                className="logo-opt"
+                aria-pressed={current?.id === k.id}
+                title={k.name + (i === 0 ? " (primary)" : "")}
+                type="button"
+                onClick={() => set({ logoId: i === 0 ? null : k.id } as Partial<Layer>)}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={st.logoSrcs[k.id] ?? k.src} alt="" />
+                <em>{k.name}</em>
+              </button>
+            ))}
+          </div>
+        </Field>
+      ) : null}
       {st.logoSrc ? (
         <div className="creative" style={{ marginBottom: 10 }}>
           <div className="creative-thumb pad">

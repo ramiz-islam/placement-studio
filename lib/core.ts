@@ -61,9 +61,23 @@ export interface CopyPreset {
   cta: string;
 }
 
+/** One logo in the kit: the primary mark, an emblem, a mono version, a favicon. */
+export interface KitLogo {
+  id: string;
+  name: string;
+  src: string;
+}
+
 export interface BrandKit {
   brand: string;
+  /** @deprecated the first entry of `logos`; kept so saved kits still load */
   logo: string | null;
+  /**
+   * Every logo the brand uses, primary first. A logo layer picks one by id and
+   * falls back to the primary, so a campaign can run the emblem on the story
+   * and the full wordmark on the pre-roll without two kits.
+   */
+  logos: KitLogo[];
   headFont: string;
   headColor: string;
   /** the second headline colour, applied to [bracketed] words */
@@ -440,6 +454,6 @@ export const isRTL = (l: Lang): boolean => l !== "en";
 
 export const KIT_DEFAULTS: BrandKit = {
   brand:"CarSwitch", logo:null, headFont:"jakarta",
-  headColor:"#FFFFFF", headColor2:"#BFFF00", ctaBg:"#BFFF00", ctaInk:"#141652", appScreen:null
+  headColor:"#FFFFFF", headColor2:"#BFFF00", ctaBg:"#BFFF00", ctaInk:"#141652", appScreen:null, logos:[]
 };
 export const KIT_KEY = "ps.brandkit.v1";

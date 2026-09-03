@@ -318,9 +318,15 @@ export const inkOf = (p: Placed): Box => p.ink ?? p.box;
 
 export interface LayoutContext {
   lang: Lang;
-  /** natural height / natural width of the loaded logo */
+  /** natural height / natural width of the primary logo */
   logoAspect: number;
+  /** the same, per kit logo id, for layers that picked a different one */
+  logoAspects?: Record<string, number>;
 }
+
+/** The aspect a logo layer lays out with: its own logo's if it picked one, else the primary's. */
+export const logoAspectFor = (c: LayoutContext, layer: { logoId?: string | null }): number =>
+  (layer.logoId ? c.logoAspects?.[layer.logoId] : undefined) ?? c.logoAspect;
 
 /** Geometry for one layer on one placement. */
 export function place(pl: Placement, d: Design, raw: Layer, c: LayoutContext, placementId = pl.id): Placed {
@@ -414,8 +420,8 @@ export function place(pl: Placement, d: Design, raw: Layer, c: LayoutContext, pl
       const w = layer.w / 100;
       return {
         layer,
-        box: { x: pos.x, y: pos.y, w, h: w * c.logoAspect * (W / H) },
-        metrics: { kind: "logo", aspect: c.logoAspect },
+        box: { x: pos.x, y: pos.y, w, h: w * logoAspectFor(c, layer) * (W / H) },
+        metrics: { kind: "logo", aspect: logoAspectFor(c, layer) },
       };
     }
     case "shape": {

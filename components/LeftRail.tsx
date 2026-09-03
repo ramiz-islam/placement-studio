@@ -11,6 +11,7 @@ import { sample } from "./Stage";
 export function LeftRail({ onGenerate }: { onGenerate: () => void }) {
   const st = useStudio();
   const fileRef = useRef<HTMLInputElement>(null);
+  const psdRef = useRef<HTMLInputElement>(null);
   const d = st.design;
 
   const readCreative = (f: File | undefined) => {
@@ -45,6 +46,9 @@ export function LeftRail({ onGenerate }: { onGenerate: () => void }) {
                 <button className="link-btn" onClick={() => fileRef.current?.click()} type="button">
                   Replace
                 </button>
+                <button className="link-btn" onClick={() => psdRef.current?.click()} type="button">
+                  {st.importing ? "Importing…" : "Import PSD"}
+                </button>
                 <button className="link-btn danger" onClick={st.reset} type="button">
                   Start over
                 </button>
@@ -57,7 +61,7 @@ export function LeftRail({ onGenerate }: { onGenerate: () => void }) {
               <use href="#i-up" />
             </svg>
             <div className="drop-t">Drop an image or click to browse</div>
-            <div className="drop-s">JPG, PNG or WebP · any ratio</div>
+            <div className="drop-s">JPG, PNG or WebP · any ratio · or a layered PSD</div>
           </button>
         )}
 
@@ -70,6 +74,29 @@ export function LeftRail({ onGenerate }: { onGenerate: () => void }) {
             readCreative(e.target.files?.[0]);
             e.target.value = "";
           }}
+        />
+
+
+        <input
+
+          ref={psdRef}
+
+          type="file"
+
+          accept=".psd,image/vnd.adobe.photoshop"
+
+          hidden
+
+          onChange={e => {
+
+            const f = e.target.files?.[0];
+
+            e.target.value = "";
+
+            if (f) void st.importPsd(f);
+
+          }}
+
         />
 
         <div className="row" style={{ marginTop: 10 }}>

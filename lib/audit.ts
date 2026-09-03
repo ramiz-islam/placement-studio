@@ -52,6 +52,7 @@ export interface AuditInput {
   meta: CreativeMeta;
   design: Design;
   logo: HTMLImageElement | null;
+  logos?: Record<string, HTMLImageElement>;
   fit: Fit;
   padColor: string;
   ver: number;
@@ -116,7 +117,9 @@ export const PENALTY_ROWS: { label: string; cost: string }[] = [
 const SCORED_KINDS = new Set<Layer["kind"]>(["logo", "text", "cta"]);
 
 export function audit(input: AuditInput): AuditResult {
-  const { pl, img, meta, design: d, logo, fit, padColor, ver } = input;
+  const { pl, img, meta, design: d, logo, logos, fit, padColor, ver } = input;
+  const logoAspects: Record<string, number> = {};
+  for (const [id, im] of Object.entries(logos ?? {})) if (im.naturalWidth) logoAspects[id] = im.naturalHeight / im.naturalWidth;
   const checks: Check[] = [];
   let score = 100;
   let currentLayer: string | undefined;
@@ -307,6 +310,7 @@ export function audit(input: AuditInput): AuditResult {
   const ctx: LayoutContext = {
     lang: d.lang,
     logoAspect: logo ? logo.naturalHeight / logo.naturalWidth : 0.3,
+    logoAspects,
   };
 
   if (d.copyOn) {
@@ -323,7 +327,7 @@ export function audit(input: AuditInput): AuditResult {
       // is whether the logo, the headline, the brand line and the button
       // survive the platform's furniture.
       if (!SCORED_KINDS.has(l.kind)) continue;
-      if (l.kind === "logo" && !logo) continue;
+      if (l.kind === "logo" && !((l.logoId && logos?.[l.logoId]) || logo)) continue;
       currentLayer = l.id;
 
       // measure what is painted, not the block it is laid out in

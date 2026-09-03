@@ -156,6 +156,8 @@ export interface CtaLayer extends Base {
 
 export interface LogoLayer extends Base {
   kind: "logo";
+  /** which kit logo this layer shows; absent or unknown means the primary */
+  logoId?: string | null;
   /** % of frame width */
   w: number;
   /** a plate that hugs the logo */
