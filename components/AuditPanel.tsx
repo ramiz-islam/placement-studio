@@ -29,6 +29,14 @@ export function AuditPanel() {
     : null;
 
   const g = a ? grade(a.score) : null;
+
+  // The acknowledged checks. Their points come back in the adjusted score, but
+  // the real one stays on screen too: a gate you can quietly edit is not a gate.
+  const ignored = st.ignoredHere;
+  const ignoredCount = a ? a.checks.filter(c => c.level !== "ok" && ignored[c.key]).length : 0;
+  const givenBack = a ? a.checks.filter(c => ignored[c.key]).reduce((n, c) => n + c.penalty, 0) : 0;
+  const adjusted = a ? Math.min(100, a.score + givenBack) : null;
+  const ga = adjusted !== null ? grade(adjusted) : null;
   const z = masterZone(pl, PLACEMENTS);
   const fails = a ? a.checks.filter(c => c.level !== "ok").length : 0;
 
@@ -46,6 +54,13 @@ export function AuditPanel() {
             <div className="score-grade" style={{ color: g?.color }}>
               {g ? g.label : "Load a creative"}
             </div>
+            {ignoredCount > 0 && adjusted !== null ? (
+              <div className="score-adj">
+                <b style={{ color: ga?.color }}>{adjusted}</b> with {ignoredCount} acknowledged{" "}
+                {ignoredCount === 1 ? "check" : "checks"} set aside
+                <span className="score-adj-note"> — the {a!.score} above is still the real number</span>
+              </div>
+            ) : null}
             <div className="score-for">{ready ? `${pl.plat} · ${pl.name}` : "No placement scored yet"}</div>
             <div className="meter">
               <i style={{ width: `${a ? a.score : 0}%`, background: g?.color }} />
@@ -67,23 +82,44 @@ export function AuditPanel() {
               <span className="p-note">{fails ? `${fails} to look at` : "all clear"}</span>
             </div>
             <ul className="checks">
-              {a.checks.map((c, i) => (
-                <li className="check" key={`${c.title}-${i}`}>
-                  <span className={`chk-ico ${c.level}`}>
-                    <svg>
-                      <use href={`#${icoFor(c.level)}`} />
-                    </svg>
-                  </span>
-                  <span className="chk-body">
-                    <span className="chk-t">
-                      {c.title}
-                      <em>{c.tag}</em>
-                      {c.penalty > 0 ? <b className="chk-cost">-{c.penalty}</b> : null}
+              {a.checks.map((c, i) => {
+                const off = Boolean(ignored[c.key]);
+                const clickable = Boolean(c.layerId) && c.level !== "ok";
+                return (
+                  <li
+                    className={`check${off ? " ignored" : ""}${clickable ? " clickable" : ""}`}
+                    key={`${c.title}-${i}`}
+                    onClick={clickable ? () => st.select(c.layerId!) : undefined}
+                    title={clickable ? "Select this layer on the frame" : undefined}
+                  >
+                    <span className={`chk-ico ${c.level}`}>
+                      <svg>
+                        <use href={`#${icoFor(c.level)}`} />
+                      </svg>
                     </span>
-                    <span className="chk-d" dangerouslySetInnerHTML={{ __html: c.detail }} />
-                  </span>
-                </li>
-              ))}
+                    <span className="chk-body">
+                      <span className="chk-t">
+                        {c.title}
+                        <em>{c.tag}</em>
+                        {c.penalty > 0 ? <b className="chk-cost">{off ? "set aside" : `-${c.penalty}`}</b> : null}
+                      </span>
+                      <span className="chk-d" dangerouslySetInnerHTML={{ __html: c.detail }} />
+                      {c.level !== "ok" ? (
+                        <button
+                          className="link-btn chk-ignore"
+                          type="button"
+                          onClick={e => {
+                            e.stopPropagation();
+                            st.toggleIgnore(c.key);
+                          }}
+                        >
+                          {off ? "Count it again" : "Looked at it — set aside"}
+                        </button>
+                      ) : null}
+                    </span>
+                  </li>
+                );
+              })}
             </ul>
           </div>
 

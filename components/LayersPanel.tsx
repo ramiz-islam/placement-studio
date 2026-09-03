@@ -497,7 +497,7 @@ function TextInspector({ l, set, geo }: { l: TextLayer; set: Set; geo: Geo }) {
         <Field label="Block width" hint={`${l.blockW}% width`}>
           <input
             type="range"
-            min={20}
+            min={8}
             max={96}
             step={1}
             value={l.blockW}

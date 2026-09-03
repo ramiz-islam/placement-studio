@@ -90,6 +90,12 @@ export interface StudioState {
   future: Design[];
   toast: string | null;
   cuttingOut: boolean;
+  /**
+   * Checks the user has looked at and accepted, per placement:
+   * ignored[placementId][check.key]. The real score is still computed and
+   * shown; this only drives the second, adjusted number.
+   */
+  ignored: Record<string, Record<string, true>>;
 }
 
 export interface Studio extends StudioState {
@@ -144,6 +150,9 @@ export interface Studio extends StudioState {
   moveSelected: (placementId: string, dx: number, dy: number, exceptId?: string) => void;
   /** put a screenshot on a screen layer and remember it for the next one */
   loadScreenshot: (layerId: string, src: string) => void;
+  /** acknowledge a check on this placement, or take the acknowledgement back */
+  toggleIgnore: (key: string) => void;
+  ignoredHere: Record<string, true>;
   /**
    * Cut the subject out of the creative and add it as a front layer, so a
    * shape can sit behind them.
@@ -207,6 +216,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     future: [],
     toast: null,
     cuttingOut: false,
+    ignored: {},
   }));
   const [kitReady, setKitReady] = useState(false);
 
@@ -384,6 +394,15 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     },
     [commit, say]
   );
+
+  const toggleIgnore = useCallback((key: string) => {
+    setS(prev => {
+      const per = { ...(prev.ignored[prev.active] ?? {}) };
+      if (per[key]) delete per[key];
+      else per[key] = true;
+      return { ...prev, ignored: { ...prev.ignored, [prev.active]: per } };
+    });
+  }, []);
 
   const clearLogo = useCallback(() => {
     setS(prev => {
@@ -1141,6 +1160,8 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     moveLayer,
     moveSelected,
     loadScreenshot,
+    toggleIgnore,
+    ignoredHere: s.ignored[s.active] ?? {},
     cutOutSubject,
     cuttingOut: s.cuttingOut,
     autoPlaceHere,

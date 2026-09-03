@@ -31,6 +31,14 @@ export interface Check {
    * gate whether a creative gets shared.
    */
   penalty: number;
+  /** the layer this check is about, when it is about one — so a click can select it */
+  layerId?: string;
+  /**
+   * Stable identity for "I have looked at this and it is fine". Title plus tag,
+   * so acknowledging "Headline overlaps bottom" survives a re-audit and does
+   * not silently cover a different problem with the same layer.
+   */
+  key: string;
 }
 export interface AuditResult {
   score: number;
@@ -111,8 +119,9 @@ export function audit(input: AuditInput): AuditResult {
   const { pl, img, meta, design: d, logo, fit, padColor, ver } = input;
   const checks: Check[] = [];
   let score = 100;
+  let currentLayer: string | undefined;
   const add = (level: Level, title: string, tag: string, detail: string, penalty = 0) => {
-    checks.push({ level, title, tag, detail, penalty });
+    checks.push({ level, title, tag, detail, penalty, layerId: currentLayer, key: `${title}|${tag}` });
     score -= penalty;
   };
 
@@ -315,6 +324,7 @@ export function audit(input: AuditInput): AuditResult {
       // survive the platform's furniture.
       if (!SCORED_KINDS.has(l.kind)) continue;
       if (l.kind === "logo" && !logo) continue;
+      currentLayer = l.id;
 
       // measure what is painted, not the block it is laid out in
       const hit = intrusion(pl, inkOf(p));
@@ -384,6 +394,7 @@ export function audit(input: AuditInput): AuditResult {
 
     }
 
+    currentLayer = undefined;
     if (clean && clean === placed.filter(p => SCORED_KINDS.has(p.layer.kind)).length) {
       add("ok", "Layer placement", `${clean} clear`, "Every layer sits inside this placement's safe box.");
     }

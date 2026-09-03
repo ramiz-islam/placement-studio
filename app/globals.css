@@ -478,7 +478,12 @@ textarea[dir=rtl]{text-align:right}
 .verdict.poor b{color:var(--coral-soft)}
 
 /* headline lines are pre-wrapped by layout(), so they must not re-wrap */
-.lay-title .ln{display:block;white-space:nowrap}
+/* One computed line, one row. This selector once said .lay-title, a class that
+   was renamed to .lay-text, so the rule stopped applying and every headline
+   fell back to inline spans the browser re-wrapped on its own. The audit and
+   the exporter both use our line breaks; the preview has to as well, or the
+   box the score measures is not the box you see. */
+.lay-text .ln{display:block;white-space:nowrap}
 /* the grid shows the real ad frame; the rounded phone shell is opt-in */
 .device,.device.grid-card{border-radius:0}
 .device.framed{border-radius:calc(3.2cqw + 6px)}
@@ -744,3 +749,16 @@ textarea[dir=rtl]{text-align:right}
    so it looks and sits like the buttons beside it */
 .canvas-bar .cb-shot{position:relative;overflow:hidden;font-size:14px}
 .canvas-bar .cb-shot>input{position:absolute;inset:0;opacity:0;cursor:pointer;padding:0;border:0}
+
+/* --- acknowledging a check --------------------------------------------------
+   The real score never moves. A set-aside check dims, its cost turns into a
+   label, and a second number appears under the grade for what the score would
+   be without it. A failing check about a layer is a link to that layer. */
+.check.clickable{cursor:pointer;border-radius:8px;margin:0 -6px;padding-left:6px;padding-right:6px;transition:background .12s}
+.check.clickable:hover{background:var(--blue-ghost)}
+.check.ignored .chk-t,.check.ignored .chk-d{opacity:.5}
+.check.ignored .chk-cost{color:var(--muted);background:var(--ink-800)}
+.chk-ignore{display:inline-block;margin-top:5px;font-size:11px}
+.score-adj{margin-top:6px;font-size:11.5px;color:var(--text-dim);line-height:1.4}
+.score-adj b{font-size:15px;font-weight:800;font-variant-numeric:tabular-nums}
+.score-adj-note{color:var(--muted)}

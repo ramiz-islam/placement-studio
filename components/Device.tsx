@@ -351,11 +351,16 @@ export function Device(props: DeviceProps) {
     const startH = host ? host.offsetHeight : 1;
     const startPx = ev.clientX;
     const startPy = ev.clientY;
+    // Read whichever dimensions this layer has, by name. Listing kinds here is
+    // how the App screen layer got left out: its w and h started from 0, so
+    // the first pixel of any drag clamped it to the minimum size — "I click a
+    // side to stretch and it goes back to minimum".
+    const dims = layer as unknown as Partial<Record<Dim, number>>;
     const startVals: Record<string, number> = {
-      blockW: layer.kind === "text" ? layer.blockW : 0,
-      w: layer.kind === "shape" || layer.kind === "logo" || layer.kind === "icon" ? layer.w : 0,
-      h: layer.kind === "shape" ? layer.h : 0,
-      size: layer.kind === "text" || layer.kind === "cta" ? layer.size : 0,
+      blockW: dims.blockW ?? 0,
+      w: dims.w ?? 0,
+      h: dims.h ?? 0,
+      size: dims.size ?? 0,
     };
     const startPos = posFor(d, pl.id, layer);
     const west = edge.includes("w");
