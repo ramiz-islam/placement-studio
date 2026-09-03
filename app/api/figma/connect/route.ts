@@ -11,8 +11,12 @@ import { STATE_COOKIE, cookieHeader, figmaEnv, originOf } from "@/lib/figma-sess
 
 export const runtime = "nodejs";
 
-/** Read-only access to file content, plus who the user is so the UI can say so. */
-export const SCOPES = "file_content:read,current_user:read";
+/**
+ * Read-only access to file content, plus who the user is so the UI can say so.
+ * Not exported: Next.js type-checks route modules and rejects any export that is
+ * not a handler or a route config, which is exactly what broke the last build.
+ */
+const SCOPES = "file_content:read,current_user:read";
 
 export async function GET(req: Request) {
   const { clientId, clientSecret, cookieSecret } = figmaEnv();
