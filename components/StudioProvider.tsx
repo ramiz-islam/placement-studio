@@ -142,6 +142,8 @@ export interface Studio extends StudioState {
   moveLayer: (placementId: string, layerId: string, x: number, y: number) => void;
   /** apply one delta to every selected layer except the one already moved */
   moveSelected: (placementId: string, dx: number, dy: number, exceptId?: string) => void;
+  /** put a screenshot on a screen layer and remember it for the next one */
+  loadScreenshot: (layerId: string, src: string) => void;
   /**
    * Cut the subject out of the creative and add it as a front layer, so a
    * shape can sit behind them.
@@ -363,6 +365,26 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  const loadScreenshot = useCallback(
+    (layerId: string, src: string) => {
+      commit(`shot:${layerId}`, d => ({
+        ...d,
+        layers: d.layers.map(l => (l.id === layerId && l.kind === "screen" ? { ...l, src } : l)),
+      }));
+      setS(prev => {
+        const k = { ...prev.kit, appScreen: src };
+        try {
+          localStorage.setItem(KIT_KEY, JSON.stringify(k));
+        } catch {
+          /* too large to persist; still active this session */
+        }
+        return { ...prev, kit: k };
+      });
+      say("Screenshot loaded — drag the green pins onto the phone's glass");
+    },
+    [commit, say]
+  );
+
   const clearLogo = useCallback(() => {
     setS(prev => {
       const k = { ...prev.kit, logo: null };
@@ -468,7 +490,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
                 : kind === "icon"
                   ? iconLayer()
                   : kind === "screen"
-                    ? screenLayer()
+                    ? screenLayer({ src: prev.kit.appScreen })
                     : kind === "band"
                       ? bandLayer()
                       : kind === "chevron"
@@ -1118,6 +1140,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     canUngroup: s.design.layers.some(l => s.selectedIds.includes(l.id) && Boolean(l.group)),
     moveLayer,
     moveSelected,
+    loadScreenshot,
     cutOutSubject,
     cuttingOut: s.cuttingOut,
     autoPlaceHere,

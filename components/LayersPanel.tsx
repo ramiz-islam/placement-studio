@@ -905,6 +905,7 @@ function ShapeInspector({ l, set, geo }: { l: ShapeLayer; set: Set; geo: Geo }) 
 
 function ScreenInspector({ l, set, geo }: { l: ScreenLayer; set: Set; geo: Geo }) {
   const fileRef = useRef<HTMLInputElement>(null);
+  const st = useStudio();
   const reset = () =>
     geo({
       corners: [
@@ -936,8 +937,7 @@ function ScreenInspector({ l, set, geo }: { l: ScreenLayer; set: Set; geo: Geo }
           if (!f) return;
           const fr = new FileReader();
           // 1200px is plenty: the screenshot is warped into a phone-sized slot
-          fr.onload = async ev =>
-            set({ src: await shrinkImage(String(ev.target?.result), 1200) } as Partial<Layer>);
+          fr.onload = async ev => st.loadScreenshot(l.id, await shrinkImage(String(ev.target?.result), 1200));
           fr.readAsDataURL(f);
         }}
       />

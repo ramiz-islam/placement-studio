@@ -18,7 +18,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { resolveLayer } from "@/lib/geometry";
 import type { CtaLayer, IconLayer, Layer, LogoLayer, ShapeLayer, TextLayer } from "@/lib/layers";
-import { useStudio } from "./StudioProvider";
+import { shrinkImage, useStudio } from "./StudioProvider";
 
 /** The layer's own size field, and a sane step, per kind. */
 function sizeOf(l: Layer): { key: "size" | "w"; value: number; min: number; max: number } | null {
@@ -78,11 +78,15 @@ export function CanvasToolbar() {
     const w = wrap.getBoundingClientRect();
     const barW = barRef.current?.offsetWidth ?? 250;
     const barH = barRef.current?.offsetHeight ?? 34;
-    // above the layer by default; flip below when it would leave the wrapper
-    const wantTop = r.top - w.top - barH - 8;
-    const below = wantTop < 0;
+    // Below the layer by default. Above is where the rotate handle lives —
+    // 9cqw up, with a stalk — and a bar placed there sat exactly on top of it,
+    // so the one control that lets you spin a layer freely was unreachable and
+    // the only rotation left was this bar's own 45-degree button. Flip above
+    // only when there is no room underneath.
+    const wantTop = r.bottom - w.top + 10;
+    const below = wantTop + barH <= w.height;
     return setBox({
-      top: below ? r.bottom - w.top + 8 : wantTop,
+      top: below ? wantTop : Math.max(4, r.top - w.top - barH - 34),
       left: Math.max(4, Math.min(w.width - barW - 4, r.left - w.left + r.width / 2 - barW / 2)),
       below,
     });
@@ -166,6 +170,27 @@ export function CanvasToolbar() {
           <button className="cb" title="Align right" data-label="Align right" onClick={() => st.align("right")} type="button">
             ⇥
           </button>
+        </>
+      ) : null}
+
+      {l.kind === "screen" ? (
+        <>
+          <label className="cb cb-shot" title="Load a screenshot" data-label="Screenshot">
+            <span aria-hidden="true">▣</span>
+            <input
+              type="file"
+              accept="image/*"
+              onChange={e => {
+                const f = e.target.files?.[0];
+                e.target.value = "";
+                if (!f) return;
+                const fr = new FileReader();
+                fr.onload = async ev => st.loadScreenshot(id, await shrinkImage(String(ev.target?.result), 1200));
+                fr.readAsDataURL(f);
+              }}
+            />
+          </label>
+          <span className="cb-sep" aria-hidden="true" />
         </>
       ) : null}
 

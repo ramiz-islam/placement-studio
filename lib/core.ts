@@ -70,6 +70,13 @@ export interface BrandKit {
   headColor2: string;
   ctaBg: string;
   ctaInk: string;
+  /**
+   * The last app screenshot loaded, so the next App screen layer arrives
+   * already filled. Same idea as remembering the logo: the screenshot is the
+   * same across a campaign, and re-picking it every time is friction for
+   * nothing.
+   */
+  appScreen: string | null;
 }
 
 /**
@@ -433,6 +440,6 @@ export const isRTL = (l: Lang): boolean => l !== "en";
 
 export const KIT_DEFAULTS: BrandKit = {
   brand:"CarSwitch", logo:null, headFont:"jakarta",
-  headColor:"#FFFFFF", headColor2:"#BFFF00", ctaBg:"#BFFF00", ctaInk:"#141652"
+  headColor:"#FFFFFF", headColor2:"#BFFF00", ctaBg:"#BFFF00", ctaInk:"#141652", appScreen:null
 };
 export const KIT_KEY = "ps.brandkit.v1";

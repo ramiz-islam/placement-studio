@@ -64,8 +64,7 @@ function resizeSpec(l: Layer): ResizeSpec {
       // a band spans the frame, so an angle would only break that
       return l.shape === "band" ? { height: "h", rotate: false } : { width: "w", height: "h", rotate: true };
     case "screen":
-      // the four corner pins do the shaping, so edge resizing would fight them
-      return { width: "w", height: "h" };
+      return { width: "w", height: "h", rotate: true };
   }
 }
 
@@ -624,7 +623,12 @@ export function Device(props: DeviceProps) {
             data-layer={l.id}
             className={cls}
             onPointerDown={onPointerDown}
-            style={{ ...base, width: pc(p.box.w), height: pc(p.box.h) }}
+            style={{
+              ...base,
+              width: pc(p.box.w),
+              height: pc(p.box.h),
+              transform: l.rotation ? `rotate(${l.rotation}deg)` : undefined,
+            }}
           >
             <span
               aria-hidden="true"
@@ -660,7 +664,7 @@ export function Device(props: DeviceProps) {
                     padding: "2cqw",
                   }}
                 >
-                  Load a screenshot
+                  Add a screenshot from the bar below, then drag the green pins onto the phone
                 </span>
               )}
               {l.gloss > 0 && l.src ? (

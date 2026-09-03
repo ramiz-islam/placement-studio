@@ -204,7 +204,8 @@ function drawLayer(
   logoCache: Map<string, HTMLImageElement>
 ) {
   const deg = p.layer.rotation ?? 0;
-  const spinsHere = p.layer.kind === "logo" || p.layer.kind === "cta" || p.layer.kind === "text";
+  const spinsHere =
+    p.layer.kind === "logo" || p.layer.kind === "cta" || p.layer.kind === "text" || p.layer.kind === "screen";
   if (!deg || !spinsHere) {
     drawLayerBody(g, p, pl, o, W, H, logoCache);
     return;

@@ -739,3 +739,8 @@ textarea[dir=rtl]{text-align:right}
   box-shadow:0 0 0 .18cqw rgba(20,22,82,.55)}
 .snapline.v{top:0;bottom:0;width:.34cqw;margin-left:-.17cqw}
 .snapline.h{left:0;right:0;height:.34cqw;margin-top:-.17cqw}
+
+/* the screenshot picker lives on the bar as a label wrapping a hidden input,
+   so it looks and sits like the buttons beside it */
+.canvas-bar .cb-shot{position:relative;overflow:hidden;font-size:14px}
+.canvas-bar .cb-shot>input{position:absolute;inset:0;opacity:0;cursor:pointer;padding:0;border:0}
