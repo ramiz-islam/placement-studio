@@ -13,10 +13,17 @@ export const runtime = "nodejs";
 
 /**
  * Read-only access to file content, plus who the user is so the UI can say so.
- * Not exported: Next.js type-checks route modules and rejects any export that is
- * not a handler or a route config, which is exactly what broke the last build.
+ *
+ * These must also be ticked on the app's "OAuth scopes" page in Figma, or the
+ * authorise step answers "Invalid scopes for app" before the user ever sees a
+ * consent screen. FIGMA_SCOPES overrides the list so a mismatch can be fixed
+ * with a secret rather than a deploy. Space-separated, which Figma accepts
+ * alongside commas.
+ *
+ * Not exported: Next.js type-checks route modules and rejects any export that
+ * is not a handler or a route config.
  */
-const SCOPES = "file_content:read,current_user:read";
+const SCOPES = process.env.PS_FIGMA_SCOPES || process.env.FIGMA_SCOPES || "file_content:read current_user:read";
 
 export async function GET(req: Request) {
   const { clientId, clientSecret, cookieSecret } = figmaEnv();
