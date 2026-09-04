@@ -133,11 +133,24 @@ export async function POST(req: Request) {
       }
     }
 
-    const built = plan.build(images);
+    // the frame's own image fill, by reference — Figma hands back a URL per imageRef
+    const refImages: Record<string, string> = {};
+    if (plan.backgroundRef) {
+      const r = await figmaGet<{ meta?: { images?: Record<string, string> } }>(sess, `/v1/files/${link.fileKey}/images`);
+      sess = r.sess;
+      const url = r.data.meta?.images?.[plan.backgroundRef];
+      if (url) {
+        const data = await toDataUrl(url);
+        if (data) refImages[plan.backgroundRef] = data;
+      }
+    }
+
+    const built = plan.build(images, refImages);
     const res = NextResponse.json({
       width: plan.width,
       height: plan.height,
       creative: built.creative,
+      creativeColor: !built.creative && plan.backgroundColor ? plan.backgroundColor : null,
       layers: built.layers,
       notes: pageNote ? [pageNote, ...built.notes] : built.notes,
       user: sess.user ?? null,

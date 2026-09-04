@@ -114,7 +114,7 @@ export interface Studio extends StudioState {
   patchDesign: (p: Partial<Design>, tag?: string) => void;
   loadCreative: (src: string, name: string, bytes: number, opts?: { autoPlace?: boolean }) => void;
   /** read a Photoshop file: its artwork becomes the creative, its layers become layers */
-  importPsd: (file: File) => Promise<void>;
+  importPsd: (file: File, opts?: { flatten?: boolean }) => Promise<void>;
   /** the same, from a Figma frame link, as the connected Figma user */
   importFigma: (url: string) => Promise<void>;
   importing: boolean;
@@ -559,11 +559,11 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
   );
 
   const importPsd = useCallback(
-    async (file: File) => {
+    async (file: File, opts?: { flatten?: boolean }) => {
       setS(prev => ({ ...prev, importing: true }));
       try {
         const { importPsd: parse } = await import("@/lib/psd");
-        applyImport(await parse(file, kitDefaults(s.kit)), file.name, "importPsd");
+        applyImport(await parse(file, kitDefaults(s.kit), opts), file.name, opts?.flatten ? "importPsdFlat" : "importPsd");
       } catch (e) {
         setS(prev => ({ ...prev, importing: false }));
         say(e instanceof Error ? e.message : "That file could not be read as a PSD.");
@@ -586,10 +586,21 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
           width: number;
           height: number;
           creative: string | null;
+          creativeColor?: string | null;
           layers: Layer[];
           notes: string[];
         };
         if (!res.ok) throw new Error(json.error || "The Figma import failed.");
+        // a frame whose background is a flat colour: paint it here, where there is a canvas
+        if (!json.creative && json.creativeColor) {
+          const c = document.createElement("canvas");
+          c.width = Math.round(json.width);
+          c.height = Math.round(json.height);
+          const g = c.getContext("2d")!;
+          g.fillStyle = json.creativeColor;
+          g.fillRect(0, 0, c.width, c.height);
+          json.creative = c.toDataURL("image/png");
+        }
         applyImport(json, "Figma frame", "importFigma");
       } catch (e) {
         setS(prev => ({ ...prev, importing: false }));

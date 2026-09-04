@@ -404,7 +404,10 @@ function drawLayerBody(
         let tx = x;
         if (m.align === "center") tx = x + (w - lw) / 2;
         else if (m.align === "right") tx = x + w - lw;
-        for (const t of scaled) {
+        // the browser reorders spans for a dir=rtl block; here it is done by
+        // hand, so the first word of an Arabic line is placed at the right
+        const seq = m.rtl ? [...scaled].reverse() : scaled;
+        for (const t of seq) {
           g.fillStyle = grad ?? (t.accent ? l.color2 : l.color);
           if (track) {
             // draw glyph by glyph so tracking matches the measured width

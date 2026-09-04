@@ -6,7 +6,7 @@
  * rendered into the file.
  */
 
-import { FONT, isRTL, type Design, type Fit, type Lang, type Placement, type Pt, type SafeBox } from "./core";
+import { FONT, hasRTLText, isRTL, type Design, type Fit, type Lang, type Placement, type Pt, type SafeBox } from "./core";
 import { ICON, type Align, type Layer, type LayerPatch, type TextLayer } from "./layers";
 
 export const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
@@ -336,7 +336,8 @@ export function place(pl: Placement, d: Design, raw: Layer, c: LayoutContext, pl
   const pos = layer.pos;
   const W = pl.w;
   const H = pl.h;
-  const rtl = isRTL(c.lang);
+  // an Arabic headline in an English design is still Arabic
+  const rtl = isRTL(c.lang) || (layer.kind === "text" && hasRTLText(layer.text));
 
   switch (layer.kind) {
     case "text": {

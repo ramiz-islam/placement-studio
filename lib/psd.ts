@@ -19,6 +19,7 @@
  */
 
 import { readPsd, type Layer as PsdLayer, type Psd } from "ag-psd";
+import { hasRTLText } from "./core";
 import { shapeLayer, textLayer, type Layer, type NewLayerDefaults } from "./layers";
 
 export interface PsdImport {
@@ -87,7 +88,17 @@ function coverage(b: Bounds, W: number, H: number): number {
   return ((x1 - x0) * (y1 - y0)) / (W * H);
 }
 
-export async function importPsd(file: File, d: NewLayerDefaults): Promise<PsdImport> {
+export interface PsdOptions {
+  /**
+   * Use Photoshop's own flattened composite as the artwork and import no layers.
+   * Exact by definition — every layer effect, blend mode and font is already in
+   * the pixels — at the cost of editability. The safe fallback when the layered
+   * import loses something the design depends on.
+   */
+  flatten?: boolean;
+}
+
+export async function importPsd(file: File, d: NewLayerDefaults, opts: PsdOptions = {}): Promise<PsdImport> {
   const buf = await file.arrayBuffer();
   const psd: Psd = readPsd(buf, { skipThumbnail: true, skipLinkedFilesData: true });
   const W = psd.width;
@@ -97,6 +108,19 @@ export async function importPsd(file: File, d: NewLayerDefaults): Promise<PsdImp
   let rasterCount = 0;
   let textCount = 0;
   let hiddenCount = 0;
+  let effectsCount = 0;
+
+  if (opts.flatten) {
+    const flat = toDataUrl(psd.canvas);
+    if (!flat) throw new Error("This PSD has no flattened composite saved in it. In Photoshop, save with Maximize Compatibility on, or import it as layers.");
+    return {
+      width: W,
+      height: H,
+      creative: flat,
+      layers: [],
+      notes: [`Imported flat: Photoshop's own composite of ${W} × ${H}, exactly as the file looks, with no editable layers.`],
+    };
+  }
 
   /* ---------- the background: consecutive covering layers from the bottom ---------- */
 
@@ -175,17 +199,26 @@ export async function importPsd(file: File, d: NewLayerDefaults): Promise<PsdImp
         const explicitLines = Math.max(1, text.split("\n").length);
         const renderedPx =
           style.fontSize && scale > 0 ? style.fontSize * scale : b.h / explicitLines / 1.18;
+        /*
+         * Arabic and other right-to-left copy anchors on its right edge: the
+         * block is wider than the glyphs to survive a different font, and if it
+         * grew to the right the text would drift away from where the designer
+         * put it. Photoshop's "left" justification means "start" for such
+         * paragraphs, so it reads as right here.
+         */
+        const rtlText = hasRTLText(text);
         const align =
-          para.justification === "center" ? "center" : para.justification === "right" ? "right" : "left";
+          para.justification === "center" ? "center" : rtlText || para.justification === "right" ? "right" : "left";
+        const blockW = Math.max(8, Math.min(100, frac.w * 100 * 1.2));
+        const blockX =
+          align === "right" ? frac.x + frac.w - blockW / 100 : align === "center" ? frac.x + frac.w / 2 - blockW / 200 : frac.x;
         layers.push(
           textLayer(d, {
             name,
             text,
-            pos: { x: frac.x, y: frac.y },
+            pos: { x: blockX, y: frac.y },
             size: Math.max(0.5, Math.min(30, (renderedPx / W) * 100)),
-            // wider than the glyphs: our fallback font is not the file's, and a
-            // block cut to the original's width rewraps the last word
-            blockW: Math.max(8, Math.min(100, frac.w * 100 * 1.2)),
+            blockW,
             color: rgbToHex(style.fillColor as { r: number; g: number; b: number } | undefined, d.color),
             align,
             on,
@@ -199,6 +232,7 @@ export async function importPsd(file: File, d: NewLayerDefaults): Promise<PsdImp
       // an empty raster — a mask holder, a cleared layer — imports as an invisible
       // box the audit then flags; there is nothing in it to keep
       if (isBlank(node.canvas)) continue;
+      if (node.effects && Object.keys(node.effects).length) effectsCount++;
       const src = toDataUrl(node.canvas);
       if (!src) continue;
       layers.push(
@@ -230,6 +264,11 @@ export async function importPsd(file: File, d: NewLayerDefaults): Promise<PsdImp
     );
   }
 
+  if (effectsCount) {
+    notes.push(
+      `${effectsCount} ${effectsCount === 1 ? "layer uses" : "layers use"} Photoshop layer effects — strokes, shadows, glows — which live in styles, not pixels, and do not come through as layers. If those matter, import the file flat.`
+    );
+  }
   notes.push(
     `${rasterCount} image ${rasterCount === 1 ? "layer" : "layers"}, ${textCount} text ${
       textCount === 1 ? "layer" : "layers"

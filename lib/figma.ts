@@ -43,8 +43,15 @@ export interface FigmaNode {
   opacity?: number;
   children?: FigmaNode[];
   absoluteBoundingBox?: { x: number; y: number; width: number; height: number } | null;
+  /** the node's own size before rotation; the bounding box is its rotated extent */
+  size?: { x: number; y: number };
+  /** degrees, counter-clockwise, as Figma reports it */
+  rotation?: number;
   fills?: FigmaPaint[];
   characters?: string;
+  /** per-character style ids, parallel to `characters`; 0 means the node's own style */
+  characterStyleOverrides?: number[];
+  styleOverrideTable?: Record<string, { fills?: FigmaPaint[] }>;
   style?: {
     fontSize?: number;
     fontFamily?: string;
@@ -68,7 +75,11 @@ export interface FigmaPlan {
   /** node ids the route must render before building; the first may be the background */
   needImages: string[];
   backgroundId: string | null;
-  build(images: Record<string, string>): FigmaBuilt;
+  /** the frame's own image fill, when that is the background — fetched by imageRef, not rendered */
+  backgroundRef: string | null;
+  /** the frame's own solid fill, when that is the background — the client paints it */
+  backgroundColor: string | null;
+  build(images: Record<string, string>, refImages?: Record<string, string>): FigmaBuilt;
 }
 
 const COVERS = 0.9;
@@ -105,6 +116,45 @@ function solidFill(node: FigmaNode): FigmaPaint | null {
 const hasImageFill = (node: FigmaNode) => (node.fills ?? []).some(f => f.visible !== false && f.type === "IMAGE");
 
 const WALK_INTO = new Set(["FRAME", "GROUP", "SECTION"]);
+
+/**
+ * Figma colours words by per-character style overrides. This app colours them
+ * with [brackets] and a second colour. Runs whose fill differs from the node's
+ * own become bracketed; the first such colour is the second colour. More than
+ * one accent colour collapses to the first — a limit, stated here.
+ */
+function twoTone(node: FigmaNode, base: string): { text: string; color2: string | null } {
+  const chars = [...(node.characters ?? "")];
+  const ov = node.characterStyleOverrides;
+  const table = node.styleOverrideTable;
+  if (!ov || !table || !chars.length) return { text: (node.characters ?? "").trim(), color2: null };
+  const colourOf = (id: number): string | null => {
+    if (!id) return null;
+    const fills = (table[String(id)]?.fills ?? []).filter(p => p.visible !== false && p.type === "SOLID");
+    return fills.length ? hex(fills[fills.length - 1].color, base) : null;
+  };
+  let color2: string | null = null;
+  let out = "";
+  let open = false;
+  for (let i = 0; i < chars.length; i++) {
+    const c = colourOf(ov[i] ?? 0);
+    const accent = Boolean(c && c !== base);
+    if (accent && !color2) color2 = c;
+    const on = accent && c === color2;
+    if (on && !open && chars[i] !== " ") {
+      out += "[";
+      open = true;
+    } else if (!on && open) {
+      out += "]";
+      open = false;
+    }
+    out += chars[i];
+  }
+  if (open) out += "]";
+  // brackets never straddle whitespace; tidy any that closed after a space
+  out = out.replace(/\s+\]/g, "] ").replace(/\[\s+/g, " [");
+  return { text: out.trim(), color2 };
+}
 
 export function planFigmaImport(root: FigmaNode, d: NewLayerDefaults): FigmaPlan {
   const rb = root.absoluteBoundingBox;
@@ -150,6 +200,23 @@ export function planFigmaImport(root: FigmaNode, d: NewLayerDefaults): FigmaPlan
     }
   }
 
+  /*
+   * Otherwise the frame's own fill is the background — a photo set as the
+   * frame's image fill is the most common way a story is built. Rendering the
+   * whole frame instead would bake every layer into the artwork and then draw
+   * them again on top: the ghosted-double look. The image fill is fetched by
+   * its imageRef; a solid fill is painted client-side.
+   */
+  let backgroundRef: string | null = null;
+  let backgroundColor: string | null = null;
+  if (!backgroundId) {
+    const fills = (root.fills ?? []).filter(p => p.visible !== false);
+    const img = fills.find(p => p.type === "IMAGE" && p.imageRef);
+    const solid = fills.find(p => p.type === "SOLID");
+    if (img) backgroundRef = img.imageRef!;
+    else if (solid) backgroundColor = hex(solid.color, "#FFFFFF");
+  }
+
   const walk = (nodes: FigmaNode[], group: string | null, parentHidden: boolean) => {
     for (const node of nodes) {
       if (node.id === backgroundId) continue;
@@ -193,16 +260,18 @@ export function planFigmaImport(root: FigmaNode, d: NewLayerDefaults): FigmaPlan
         const align =
           st.textAlignHorizontal === "CENTER" ? "center" : st.textAlignHorizontal === "RIGHT" ? "right" : "left";
         const fontPx = st.fontSize ?? Math.max(10, f.h * H * 0.8);
+        const { text, color2 } = twoTone(node, hex(fill?.color, d.color));
         textCount++;
         steps.push((_i, layers) =>
           layers.push(
             textLayer(d, {
               name: node.name || "Text",
-              text: (node.characters ?? "").trim(),
+              text,
               pos: { x: f.x, y: f.y },
               size: Math.max(0.5, Math.min(30, (fontPx / W) * 100)),
               blockW: Math.max(8, Math.min(100, f.w * 100 * 1.04)),
               color: hex(fill?.color, d.color),
+              ...(color2 ? { color2 } : null),
               align,
               on: !hidden,
               group,
@@ -220,14 +289,27 @@ export function planFigmaImport(root: FigmaNode, d: NewLayerDefaults): FigmaPlan
       const fill = solidFill(node);
       if ((node.type === "RECTANGLE" || node.type === "ELLIPSE") && fill) {
         shapeCount++;
+        /*
+         * The bounding box is the rotated extent. A tilted rectangle imported at
+         * that box, unrotated, is a different shape — the wedge in the reference
+         * ad came in as a squat block. Use the node's own size and turn it.
+         */
+        const rot = node.rotation ?? 0;
+        const turned = Math.abs(rot) > 0.5 && node.size;
+        const ow = turned ? node.size!.x / W : f.w;
+        const oh = turned ? node.size!.y / H : f.h;
+        const cx = f.x + f.w / 2;
+        const cy = f.y + f.h / 2;
         steps.push((_i, layers) =>
           layers.push(
             shapeLayer({
               name: node.name || node.type.toLowerCase(),
               shape: node.type === "ELLIPSE" ? "ellipse" : "rect",
-              pos: { x: f.x, y: f.y },
-              w: f.w * 100,
-              h: f.h * 100,
+              pos: { x: cx - ow / 2, y: cy - oh / 2 },
+              w: ow * 100,
+              h: oh * 100,
+              // Figma turns counter-clockwise, this app clockwise
+              rotation: turned ? -rot : 0,
               fill: {
                 color: hex(fill.color, "#141652"),
                 color2: null,
@@ -270,15 +352,18 @@ export function planFigmaImport(root: FigmaNode, d: NewLayerDefaults): FigmaPlan
   };
   walk(children, null, false);
 
-  // no covering child: render the frame itself, and say what that means
-  if (!backgroundId) needImages.push(root.id);
+  // nothing covers the frame and it has no fill of its own: render the frame,
+  // and say plainly that the layers will double up
+  if (!backgroundId && !backgroundRef && !backgroundColor) needImages.push(root.id);
 
   return {
     width: W,
     height: H,
     needImages,
     backgroundId,
-    build(images) {
+    backgroundRef,
+    backgroundColor,
+    build(images, refImages = {}) {
       const layers: Layer[] = [];
       const notes: string[] = [];
       let creative: string | null = null;
@@ -286,10 +371,19 @@ export function planFigmaImport(root: FigmaNode, d: NewLayerDefaults): FigmaPlan
         creative = images[backgroundId] ?? null;
         const bg = children.find(c => c.id === backgroundId);
         notes.push(`"${bg?.name ?? "the bottom layer"}" covers the frame and became the artwork.`);
+      } else if (backgroundRef) {
+        creative = refImages[backgroundRef] ?? null;
+        notes.push(
+          creative
+            ? "The frame's own image fill became the artwork."
+            : "The frame's image fill could not be fetched from Figma; the layers were imported without it."
+        );
+      } else if (backgroundColor) {
+        notes.push(`The frame's ${backgroundColor} fill became the artwork.`);
       } else {
         creative = images[root.id] ?? null;
         notes.push(
-          "No layer covered the frame, so the frame itself is the artwork. The layers are imported too, so anything the frame already shows will appear twice — hide or delete the duplicates."
+          "Nothing covered the frame and it has no fill, so the frame itself is the artwork. The layers are imported too, so anything the frame already shows will appear twice — hide or delete the duplicates."
         );
       }
       for (const step of steps) step(images, layers, notes);

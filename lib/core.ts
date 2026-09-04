@@ -460,6 +460,14 @@ export const PRESETS: Record<Lang, CopyPreset> = {
 };
 export const isRTL = (l: Lang): boolean => l !== "en";
 
+/**
+ * Does this string carry right-to-left script — Arabic, Hebrew, Persian, Urdu?
+ * The design language is a default; a layer that is visibly Arabic must lay out
+ * right-to-left whatever the language menu says, or its words come out in
+ * reverse order.
+ */
+export const hasRTLText = (t: string): boolean => /[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF]/.test(t);
+
 export const KIT_DEFAULTS: BrandKit = {
   brand:"CarSwitch", logo:null, headFont:"jakarta",
   headColor:"#FFFFFF", headColor2:"#BFFF00", ctaBg:"#BFFF00", ctaInk:"#141652", appScreen:null, logos:[]
