@@ -670,6 +670,10 @@ export function snapBox(
  * does. Type sizes and block widths scale with the source's width in the
  * frame, since both are percentages of frame width.
  */
+/** Does this placement's ratio differ from the source by more than a hair? */
+export const ratioMismatch = (srcW: number, srcH: number, pl: Placement, tol = 0.02) =>
+  Math.abs(pl.w / pl.h - srcW / srcH) / (pl.w / pl.h) > tol;
+
 export function importOverrides(
   layers: Layer[],
   srcW: number,

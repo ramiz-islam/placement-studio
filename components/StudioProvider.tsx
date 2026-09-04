@@ -49,6 +49,7 @@ import {
   clampPos,
   fitFor,
   importOverrides,
+  ratioMismatch,
   patchFor,
   place,
   posFor,
@@ -357,15 +358,17 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
               ver,
             };
           }
+          // a plain upload replaces whatever was imported; the layers are ours again
+          const design0: Design = { ...prev.design, importSource: null };
           // Look at the artwork before laying anything out. Dropping the copy
           // on default coordinates puts a logo across whatever happens to be in
           // the top-left corner, which on a selfie is usually a hand.
-          const overrides: Design["overrides"] = { ...prev.design.overrides };
+          const overrides: Design["overrides"] = { ...design0.overrides };
           const needPlate = new Set<string>();
           try {
             for (const pl of PLACEMENTS) {
-              const m = detailMap(pl, img, fitFor(prev.design, pl.id), pad, ver);
-              const { patches, plates } = autoLayout(pl, prev.design, safeF(pl), ctxOf(prev), m, pl.id);
+              const m = detailMap(pl, img, fitFor(design0, pl.id), pad, ver);
+              const { patches, plates } = autoLayout(pl, design0, safeF(pl), ctxOf(prev), m, pl.id);
               overrides[pl.id] = { ...(overrides[pl.id] ?? {}), ...patches };
               for (const id of plates) needPlate.add(id);
             }
@@ -380,9 +383,9 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
             padColor: pad,
             ver,
             design: {
-              ...prev.design,
+              ...design0,
               autoPlaced: Object.fromEntries(PLACEMENTS.map(p => [p.id, true as const])),
-              layers: plateLayers(prev.design.layers, [...needPlate], true),
+              layers: plateLayers(design0.layers, [...needPlate], true),
               overrides,
             },
           };
@@ -512,17 +515,30 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
         // every placement gets the design mapped through its own crop of the
         // artwork; marked as auto-placed so "copy to all channels" does not
         // treat 22 derived layouts as hand-tuned work to protect
-        const overrides = importOverrides(r.layers, r.width, r.height, PLACEMENTS, pl =>
-          fitFor(prev.design, pl.id)
-        );
+        /*
+         * A design made for one ratio cannot fill another. Cover-cropping it —
+         * what the first import did — zooms into the middle third of a landscape
+         * file on a story slot and looks broken, because it is. Letterbox is the
+         * honest default for a mismatched placement: the whole design, small,
+         * with the frame note saying why. Crop stays one click away, and the
+         * layers re-map when it is chosen.
+         */
+        const fitOverrides = { ...prev.design.fitOverrides };
+        for (const pl of PLACEMENTS) {
+          if (ratioMismatch(r.width, r.height, pl)) fitOverrides[pl.id] = "contain";
+          else delete fitOverrides[pl.id];
+        }
+        const draft: Design = { ...prev.design, fitOverrides };
+        const overrides = importOverrides(r.layers, r.width, r.height, PLACEMENTS, pl => fitFor(draft, pl.id));
         return {
           ...prev,
           importing: false,
           selectedIds: [],
           design: {
-            ...prev.design,
+            ...draft,
             layers: r.layers,
             overrides,
+            importSource: { w: r.width, h: r.height },
             autoPlaced: Object.fromEntries(Object.keys(overrides).map(id => [id, true as const])),
           },
           past: [...prev.past, { design: prev.design, tag, at: Date.now() }].slice(-HISTORY_LIMIT),
@@ -638,7 +654,35 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
   );
 
   /* ---------- fit, per channel ---------- */
-  const setFitDefault = useCallback((f: Fit) => commit("fit", d => ({ ...d, fit: f })), [commit]);
+
+  /**
+   * After a fit change, imported layers have to follow the artwork through the
+   * new transform, or they sit where the old crop put them while the picture
+   * moves underneath. Rewrites the import patches for the given placements;
+   * anything built here rather than imported is left alone.
+   */
+  const remapImports = (d: Design, placements: Placement[]): Design => {
+    if (!d.importSource) return d;
+    const fresh = importOverrides(d.layers, d.importSource.w, d.importSource.h, placements, pl => fitFor(d, pl.id));
+    const overrides = { ...d.overrides };
+    const autoPlaced = { ...d.autoPlaced };
+    for (const pl of placements) {
+      if (fresh[pl.id]) {
+        overrides[pl.id] = fresh[pl.id];
+        autoPlaced[pl.id] = true;
+      } else {
+        // the identity: the base layers already hold the source positions
+        delete overrides[pl.id];
+        delete autoPlaced[pl.id];
+      }
+    }
+    return { ...d, overrides, autoPlaced };
+  };
+
+  const setFitDefault = useCallback(
+    (f: Fit) => commit("fit", d => remapImports({ ...d, fit: f }, PLACEMENTS)),
+    [commit]
+  );
   const setFitHere = useCallback(
     (f: Fit) =>
       setS(prev =>
@@ -646,7 +690,10 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
           ? prev
           : {
               ...prev,
-              design: { ...prev.design, fitOverrides: { ...prev.design.fitOverrides, [prev.active]: f } },
+              design: remapImports(
+                { ...prev.design, fitOverrides: { ...prev.design.fitOverrides, [prev.active]: f } },
+                PLACEMENTS.filter(p => p.id === prev.active)
+              ),
               past: [...prev.past, { design: prev.design, tag: "fitHere", at: Date.now() }].slice(-HISTORY_LIMIT),
               future: [],
             }
@@ -660,7 +707,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
         delete fitOverrides[prev.active];
         return {
           ...prev,
-          design: { ...prev.design, fitOverrides },
+          design: remapImports({ ...prev.design, fitOverrides }, PLACEMENTS.filter(p => p.id === prev.active)),
           past: [...prev.past, { design: prev.design, tag: "fitReset", at: Date.now() }].slice(-HISTORY_LIMIT),
           future: [],
         };
@@ -672,7 +719,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
       const here = fitFor(prev.design, prev.active);
       return {
         ...prev,
-        design: { ...prev.design, fit: here, fitOverrides: {} },
+        design: remapImports({ ...prev.design, fit: here, fitOverrides: {} }, PLACEMENTS),
         past: [...prev.past, { design: prev.design, tag: "fitAll", at: Date.now() }].slice(-HISTORY_LIMIT),
         future: [],
       };

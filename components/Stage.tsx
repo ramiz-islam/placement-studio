@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { PLACEMENTS } from "@/lib/core";
-import { RATIO_LABEL, fitFor, hasFitOverride, hasOverride } from "@/lib/geometry";
+import { RATIO_LABEL, fitFor, hasFitOverride, hasOverride, ratioMismatch } from "@/lib/geometry";
 import { audit } from "@/lib/audit";
 import { useStudio } from "./StudioProvider";
 import { Device } from "./Device";
@@ -304,7 +304,18 @@ function FocusView({
             {" — look for the dot in the layer list. "}
           </>
         ) : null}
-        {hasFitOverride(st.design, pl.id) ? (
+        {st.design.importSource && ratioMismatch(st.design.importSource.w, st.design.importSource.h, pl) ? (
+          <>
+            <b style={{ color: "var(--amber-ink)" }}>
+              This design was made at {RATIO_LABEL(st.design.importSource.w / st.design.importSource.h)}, not{" "}
+              {RATIO_LABEL(pl.w / pl.h)}.
+            </b>{" "}
+            {st.fit === "contain"
+              ? "It is letterboxed here so nothing is lost. Crop zooms into the middle and cuts the rest off. "
+              : "Cropped, only the middle of it fits this frame. "}
+            A native {RATIO_LABEL(pl.w / pl.h)} version is the real fix for this channel.{" "}
+          </>
+        ) : hasFitOverride(st.design, pl.id) ? (
           <>
             <b style={{ color: "var(--blue-bright)" }}>
               {st.fit === "cover" ? "Cropped" : "Letterboxed"} just for this placement

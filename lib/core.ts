@@ -108,6 +108,13 @@ export interface Design {
    * appeared to do nothing at all.
    */
   autoPlaced: Record<string, true>;
+  /**
+   * The canvas size of the file the layers were imported from, or null when
+   * they were built here. While set, changing a placement's crop/letterbox
+   * re-maps the imported layers through the new fit, so they keep following
+   * the artwork instead of the transform being frozen at import time.
+   */
+  importSource: { w: number; h: number } | null;
   /** the default fit; a placement can override it */
   fit: Fit;
   /** fitOverrides[placementId] — crop or letterbox is a per-channel decision */
@@ -138,6 +145,7 @@ export interface CreativeMeta {
 /** Everything about a design except the layers, which need the brand kit. */
 export const DESIGN_BASE: Omit<Design, "layers"> = {
   autoPlaced: {},
+  importSource: null,
   fit: "cover",
   fitOverrides: {},
   lang: "en",
