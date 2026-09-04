@@ -82,8 +82,19 @@ export async function POST(req: Request) {
     }
     const n = await figmaGet<NodesResponse>(sess, `/v1/files/${link.fileKey}/nodes?ids=${encodeURIComponent(nodeId)}`);
     sess = n.sess;
-    const root = n.data.nodes[nodeId]?.document;
+    let root = n.data.nodes[nodeId]?.document;
     if (!root) throw new Error("Figma could not find that frame in the file.");
+    let pageNote: string | null = null;
+    if (root.type === "CANVAS") {
+      // the link points at a page (node 0:1 is always the first page), which
+      // has no bounds of its own; take its first frame and say so
+      const frame = root.children?.find(c =>
+        ["FRAME", "SECTION", "COMPONENT", "COMPONENT_SET", "INSTANCE"].includes(c.type)
+      );
+      if (!frame) throw new Error("That link points at a page with no frames on it. Select a frame in Figma and copy its link.");
+      pageNote = `The link pointed at the page "${root.name}", so its first frame, "${frame.name}", was imported. Select a frame in Figma and Share → Copy link to pick a different one.`;
+      root = frame;
+    }
 
     /* ---- the plan, then the pictures it needs ---- */
     const plan = planFigmaImport(root, body.defaults);
@@ -128,7 +139,7 @@ export async function POST(req: Request) {
       height: plan.height,
       creative: built.creative,
       layers: built.layers,
-      notes: built.notes,
+      notes: pageNote ? [pageNote, ...built.notes] : built.notes,
       user: sess.user ?? null,
     });
     const { cookieSecret } = figmaEnv();

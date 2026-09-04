@@ -108,7 +108,13 @@ const WALK_INTO = new Set(["FRAME", "GROUP", "SECTION"]);
 
 export function planFigmaImport(root: FigmaNode, d: NewLayerDefaults): FigmaPlan {
   const rb = root.absoluteBoundingBox;
-  if (!rb || rb.width <= 0 || rb.height <= 0) throw new Error("That frame has no size Figma can report.");
+  if (!rb || rb.width <= 0 || rb.height <= 0) {
+    throw new Error(
+      root.type === "CANVAS" || root.type === "DOCUMENT"
+        ? "That link points at a whole page. In Figma, select the frame you want and use Share → Copy link so the link carries the frame."
+        : "That node has no size Figma can report. Link to a frame instead."
+    );
+  }
   const W = rb.width;
   const H = rb.height;
   const frac = (n: FigmaNode) => {

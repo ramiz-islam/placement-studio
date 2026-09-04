@@ -48,6 +48,7 @@ import {
   alignedPositions,
   clampPos,
   fitFor,
+  importOverrides,
   patchFor,
   place,
   posFor,
@@ -507,14 +508,27 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
   const applyImport = useCallback(
     (r: { width: number; height: number; creative: string | null; layers: Layer[]; notes: string[] }, name: string, tag: string) => {
       if (!r.creative && !r.layers.length) throw new Error("Nothing in that file could be imported.");
-      setS(prev => ({
-        ...prev,
-        importing: false,
-        selectedIds: [],
-        design: { ...prev.design, layers: r.layers, overrides: {}, autoPlaced: {} },
-        past: [...prev.past, { design: prev.design, tag, at: Date.now() }].slice(-HISTORY_LIMIT),
-        future: [],
-      }));
+      setS(prev => {
+        // every placement gets the design mapped through its own crop of the
+        // artwork; marked as auto-placed so "copy to all channels" does not
+        // treat 22 derived layouts as hand-tuned work to protect
+        const overrides = importOverrides(r.layers, r.width, r.height, PLACEMENTS, pl =>
+          fitFor(prev.design, pl.id)
+        );
+        return {
+          ...prev,
+          importing: false,
+          selectedIds: [],
+          design: {
+            ...prev.design,
+            layers: r.layers,
+            overrides,
+            autoPlaced: Object.fromEntries(Object.keys(overrides).map(id => [id, true as const])),
+          },
+          past: [...prev.past, { design: prev.design, tag, at: Date.now() }].slice(-HISTORY_LIMIT),
+          future: [],
+        };
+      });
       // the creative is the flattened background, not the source file; size it
       // honestly or the file-size check fails an export that will be a fraction of it
       const bytes = r.creative ? Math.round((r.creative.length - r.creative.indexOf(",") - 1) * 0.75) : 0;

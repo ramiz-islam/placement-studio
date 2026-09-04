@@ -656,6 +656,67 @@ export function snapBox(
   };
 }
 
+/**
+ * Per-placement patches that put imported layers through the same crop the
+ * artwork gets.
+ *
+ * An import arrives with positions as fractions of the *source* canvas. The
+ * artwork is then drawn with cover (or contain) into each placement, which
+ * crops it whenever the ratios differ — but the layers were not cropped with
+ * it, so a 1.91:1 design on a 9:16 slot slid apart from its own background.
+ * This maps every layer's position and size through the rect the artwork
+ * actually occupies in each placement, so the composition holds everywhere and
+ * anything outside the crop falls outside the frame, exactly as the artwork
+ * does. Type sizes and block widths scale with the source's width in the
+ * frame, since both are percentages of frame width.
+ */
+export function importOverrides(
+  layers: Layer[],
+  srcW: number,
+  srcH: number,
+  placements: Placement[],
+  fitOf: (pl: Placement) => Fit
+): Record<string, Record<string, LayerPatch>> {
+  const out: Record<string, Record<string, LayerPatch>> = {};
+  for (const pl of placements) {
+    const r = coverRect(srcW, srcH, pl.w, pl.h, fitOf(pl));
+    const sx = r.w / pl.w;
+    const sy = r.h / pl.h;
+    const ox = r.x / pl.w;
+    const oy = r.y / pl.h;
+    // the matching ratio maps to the identity; nothing to write there
+    if (Math.abs(sx - 1) < 1e-6 && Math.abs(sy - 1) < 1e-6) continue;
+    const per: Record<string, LayerPatch> = {};
+    for (const l of layers) {
+      const patch: LayerPatch = { pos: { x: ox + l.pos.x * sx, y: oy + l.pos.y * sy } };
+      switch (l.kind) {
+        case "text":
+          patch.size = l.size * sx;
+          patch.blockW = l.blockW * sx;
+          break;
+        case "cta":
+          patch.size = l.size * sx;
+          break;
+        case "shape":
+          if (l.shape !== "band") patch.w = l.w * sx;
+          patch.h = l.h * sy;
+          break;
+        case "screen":
+          patch.w = l.w * sx;
+          patch.h = l.h * sy;
+          break;
+        case "logo":
+        case "icon":
+          patch.w = l.w * sx;
+          break;
+      }
+      per[l.id] = patch;
+    }
+    out[pl.id] = per;
+  }
+  return out;
+}
+
 export function stackInside(
   pl: Placement,
   d: Design,

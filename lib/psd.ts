@@ -43,6 +43,21 @@ function toDataUrl(canvas: HTMLCanvasElement | undefined): string | null {
   }
 }
 
+/** True when a layer's pixels are all transparent (sampled, so a 4k layer costs little). */
+function isBlank(canvas: HTMLCanvasElement | undefined): boolean {
+  if (!canvas || !canvas.width || !canvas.height) return true;
+  try {
+    const g = canvas.getContext("2d", { willReadFrequently: true });
+    if (!g) return false;
+    const d = g.getImageData(0, 0, canvas.width, canvas.height).data;
+    const step = Math.max(1, Math.floor(d.length / 4 / 20000)) * 4;
+    for (let i = 3; i < d.length; i += step) if (d[i] > 8) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function rgbToHex(c: { r: number; g: number; b: number } | undefined, fallback: string): string {
   if (!c) return fallback;
   const h = (n: number) => Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, "0");
@@ -168,8 +183,9 @@ export async function importPsd(file: File, d: NewLayerDefaults): Promise<PsdImp
             text,
             pos: { x: frac.x, y: frac.y },
             size: Math.max(0.5, Math.min(30, (renderedPx / W) * 100)),
-            // a little wider than the glyphs, or the last word of a line wraps
-            blockW: Math.max(8, Math.min(100, frac.w * 100 * 1.06)),
+            // wider than the glyphs: our fallback font is not the file's, and a
+            // block cut to the original's width rewraps the last word
+            blockW: Math.max(8, Math.min(100, frac.w * 100 * 1.2)),
             color: rgbToHex(style.fillColor as { r: number; g: number; b: number } | undefined, d.color),
             align,
             on,
@@ -180,6 +196,9 @@ export async function importPsd(file: File, d: NewLayerDefaults): Promise<PsdImp
         continue;
       }
 
+      // an empty raster — a mask holder, a cleared layer — imports as an invisible
+      // box the audit then flags; there is nothing in it to keep
+      if (isBlank(node.canvas)) continue;
       const src = toDataUrl(node.canvas);
       if (!src) continue;
       layers.push(
