@@ -1,4 +1,4 @@
-# Placement Studio — handoff (2026-09-15, HEAD c841bad)
+# Placement Studio — handoff (2026-09-15, HEAD c59d588)
 
 Read this first in a new session. It is the state of the project, the decisions
 already made, and the two problems that are open. Nothing here is aspirational;
@@ -35,6 +35,9 @@ Two separate gaps:
    blend modes are NOT brought through as editable layers — anything that is not
    a rectangle, image or plain text arrives as a rendered PNG rectangle.
    We do not yet have his concrete list of failures. Get it before building.
+   A debrief for the designer (ten questions + a screenshot protocol) is
+   published at https://claude.ai/artifact/E7SnVBwGaHWiXR3c1aB2JM for Ramiz to
+   share; answers come back to Ramiz.
 
 2. **Cannot start a design from scratch.** The tool is a layout/placement
    editor, not a design canvas. There is no blank-canvas start, no templates,
@@ -69,9 +72,21 @@ fallback: `npm run cf:deploy`. Dev: `npm run dev` on http://localhost:3210
 (writes to `.next-dev`, so a production build never breaks the dev server).
 
 Stack: Next.js 15 App Router, React 19, TypeScript strict, hand-written
-`app/globals.css` (light theme, shadow scale `--sh-1..4`, text-safe inks
-`--coral-ink/--amber-ink/--lime-ink`, all text styles WCAG AA).
-`@opennextjs/cloudflare` for Workers.
+`app/globals.css`, `@opennextjs/cloudflare` for Workers.
+
+Theme (decided 2026-09-15, commit c59d588): "darkroom". Ramiz released the UI
+from CarSwitch colours and asked for premium and distinctive. Four graphite
+surfaces `--bg-0..4`, hairlines `--hair/--hair-2/--hair-3`, bone text `--text`,
+one accent `--accent` (#FF5A1F tangerine) used only for selection, the active
+platform tab and Generate; primary buttons are bone-on-black. Status colours
+`--ok/--warn/--bad` are separate from the accent. Type: Geist (UI), Geist Mono
+(numbers), Instrument Serif italic (display: empty-state headline, the score,
+sheet titles). The old variable names (`--blue`, `--lime`, `--ink-*`, `--line`,
+`--*-ink`) are aliased to the new tokens because `lib/audit.ts` and a few
+components still read them; new CSS should use the new names. On-artwork guides
+(`--guide-safe` lime dashed safe rect, red hatching, handles) and the platform
+mocks `.ch-*` deliberately keep their own colours. Plus Jakarta Sans still loads
+because it is a brand-kit headline face for the ad itself, not for the UI.
 
 Worker secrets (set, never printed): `SITE_PASSWORD`, `OPENAI_API_KEY`,
 `ANTHROPIC_API_KEY`, `FIGMA_CLIENT_ID`, `FIGMA_CLIENT_SECRET`,
