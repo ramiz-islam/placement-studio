@@ -10,10 +10,10 @@ export const Icons = () => (
   <svg width="0" height="0" style={{ position: "absolute" }} aria-hidden="true">
     <defs>
       <symbol id="i-switch" viewBox="0 0 24 24">
-        <rect x="2.5" y="4" width="19" height="7" rx="3.5" fill="#FF5450" />
-        <circle cx="18" cy="7.5" r="2.1" fill="#141652" />
-        <rect x="2.5" y="13" width="19" height="7" rx="3.5" fill="#FFFFFF" />
-        <circle cx="6" cy="16.5" r="2.1" fill="#141652" />
+        <rect x="2.5" y="4" width="19" height="7" rx="3.5" fill="#FF5A1F" />
+        <circle cx="18" cy="7.5" r="2.1" fill="#0A0A0C" />
+        <rect x="2.5" y="13" width="19" height="7" rx="3.5" fill="#0A0A0C" />
+        <circle cx="6" cy="16.5" r="2.1" fill="#F3F0EA" />
       </symbol>
       <symbol id="i-up" viewBox="0 0 24 24">
         <path d="M12 16V4m0 0L7 9m5-5 5 5" />
